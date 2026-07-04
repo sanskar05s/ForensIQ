@@ -19,8 +19,13 @@ export default function CaseCreate() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
   async function handleSubmit(e) {
     e.preventDefault();
+
+    setError("");
 
     if (!title.trim()) {
       alert("Title is required");
@@ -32,24 +37,31 @@ export default function CaseCreate() {
       return;
     }
 
-    const { data, error } = await createCase({
-      title,
-      description,
-      investigator_name: investigatorName,
-      priority,
-      status,
-      created_by: user.id,
-    });
+    setIsSubmitting(true);
 
-    if (error) {
-      console.error(error);
-      alert(error.message);
-      return;
+    try {
+      const { data, error } = await createCase({
+        title,
+        description,
+        investigator_name: investigatorName,
+        priority,
+        status,
+        created_by: user.id,
+      });
+
+      if (error) {
+        setError(error.message);
+        return;
+      }
+
+      navigate("/cases");
+    } catch (err) {
+      setError("Something went wrong. Please try again.");
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    navigate("/cases");
   }
-
   return (
     <form
       onSubmit={handleSubmit}
@@ -101,8 +113,20 @@ export default function CaseCreate() {
         <option>Pending Review</option>
         <option>Closed</option>
       </Select>
-
-      <Button type="submit">Create Investigation</Button>
+      {error && (
+        <p
+          style={{
+            color: "var(--danger)",
+            marginBottom: "15px",
+            fontWeight: "500",
+          }}
+        >
+          {error}
+        </p>
+      )}
+      <Button type="submit" disabled={isSubmitting}>
+        {isSubmitting ? "Creating..." : "Create Investigation"}
+      </Button>
     </form>
   );
 }
