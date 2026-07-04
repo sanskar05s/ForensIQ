@@ -27,3 +27,160 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* ===========================================
+   Card
+=========================================== */
+
+.fi-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  transition: all 0.2s ease-in-out;
+}
+
+.fi-card-hover:hover {
+  cursor: pointer;
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    var(--shadow-md);
+}
+
+/* ===========================================
+   Badge
+=========================================== */
+
+.fi-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 4px 10px;
+
+  border-radius: 999px;
+
+  font-size: 12px;
+
+  font-weight: 600;
+}
+
+.fi-badge-success {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--success);
+}
+
+.fi-badge-warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--warning);
+}
+
+.fi-badge-critical {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--critical);
+}
+
+.fi-badge-info {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--info);
+}
+
+.fi-badge-neutral {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+}
+
+/* ===========================================
+   Toast
+=========================================== */
+
+.fi-toast {
+  position: fixed;
+
+  right: 24px;
+
+  bottom: 24px;
+
+  padding: 14px 18px;
+
+  border-radius: 10px;
+
+  color: white;
+
+  font-size: 14px;
+
+  animation: toastIn 0.2s ease-out;
+
+  z-index: 999;
+}
+
+.fi-toast-success {
+  background: var(--success);
+}
+
+.fi-toast-error {
+  background: var(--critical);
+}
+
+.fi-toast-info {
+  background: var(--accent);
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ===========================================
+   Confirm Dialog
+=========================================== */
+
+.fi-dialog-overlay {
+  position: fixed;
+
+  inset: 0;
+
+  background: rgba(0, 0, 0, 0.5);
+
+  display: flex;
+
+  justify-content: center;
+
+  align-items: center;
+
+  z-index: 1000;
+}
+
+.fi-dialog {
+  width: 420px;
+
+  background: var(--bg-surface);
+
+  border: 1px solid var(--border);
+
+  border-radius: 16px;
+
+  padding: 24px;
+}
+
+.fi-dialog h2 {
+  margin-bottom: 12px;
+}
+
+.fi-dialog-actions {
+  display: flex;
+
+  justify-content: flex-end;
+
+  gap: 12px;
+
+  margin-top: 24px;
+}

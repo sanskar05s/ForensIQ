@@ -5,6 +5,9 @@ import Placeholder from "./pages/Placeholder";
 import ProtectedRoute from "./components/ProtectedRoute";
 import CaseCreate from "./pages/CaseCreate";
 
+import CasePlaceholder from "./pages/CasePlaceholder";
+import EvidencePlaceholder from "./pages/EvidencePlaceholder";
+
 import { ROUTES } from "./constants";
 
 function App() {
@@ -32,7 +35,95 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path={ROUTES.CASE_DETAIL}
+          element={
+            <ProtectedRoute>
+              <CasePlaceholder />
+            </ProtectedRoute>
+          }
+        />
 
+        <Route
+          path={ROUTES.EVIDENCE}
+          element={
+            <ProtectedRoute>
+              <EvidencePlaceholder />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path={ROUTES.NEW_EVIDENCE}
+          element={
+            <ProtectedRoute>
+              <EvidencePlaceholder />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path={ROUTES.EVIDENCE_DETAIL}
+          element={
+            <ProtectedRoute>
+              <EvidencePlaceholder />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path={ROUTES.WITNESSES}
+          element={
+            <ProtectedRoute>
+              <Placeholder title="Witnesses" />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path={ROUTES.CONTRADICTIONS}
+          element={
+            <ProtectedRoute>
+              <Placeholder title="Contradictions" />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path={ROUTES.TIMELINE}
+          element={
+            <ProtectedRoute>
+              <Placeholder title="Timeline" />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path={ROUTES.KNOWLEDGE_GRAPH}
+          element={
+            <ProtectedRoute>
+              <Placeholder title="Knowledge Graph" />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path={ROUTES.ACTIVITY}
+          element={
+            <ProtectedRoute>
+              <Placeholder title="Activity Log" />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path={ROUTES.REPORT}
+          element={
+            <ProtectedRoute>
+              <Placeholder title="Report" />
+            </ProtectedRoute>
+          }
+        />
         {/* Default Route */}
         <Route path="*" element={<Navigate to={ROUTES.CASES} replace />} />
       </Routes>

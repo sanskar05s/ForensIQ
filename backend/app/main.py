@@ -1,15 +1,41 @@
 from fastapi import FastAPI
-from app.api.routes import router
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.routes import router as api_router
+from app.routers.cases import router as cases_router
 
 app = FastAPI(
     title="ForensIQ API",
-    version="1.0.0"
+    version="0.1.0",
 )
 
-app.include_router(router)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.on_event("startup")
+def startup():
+    print("ForensIQ API started. All AI modules pending.")
+
+
+app.include_router(api_router)
+app.include_router(cases_router, prefix="/api")
+
 
 @app.get("/")
 def root():
+    return {"message": "ForensIQ Backend Running"}
+
+
+@app.get("/api/health")
+def health():
     return {
-        "message": "ForensIQ Backend Running 🚀"
+        "status": "ok",
+        "service": "ForensIQ API",
+        "version": "0.1.0",
     }
