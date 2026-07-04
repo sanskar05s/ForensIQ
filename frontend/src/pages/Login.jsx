@@ -1,5 +1,11 @@
+import Button from "../components/ui/Button";
+import Input from "../components/ui/Input";
+
 import { useState } from "react";
+
 import { useAuth } from "../hooks/useAuth";
+
+import ThemeToggle from "../components/ThemeToggle";
 
 export default function Login() {
   const { signIn, user, loading } = useAuth();
@@ -26,20 +32,21 @@ export default function Login() {
 
   return (
     <div style={{ padding: "40px" }}>
+      <ThemeToggle />
       <h1>ForensIQ</h1>
 
       <form onSubmit={handleLogin}>
-        <input
+        <Input
           type="email"
-          placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          placeholder="Email"
         />
 
         <br />
         <br />
 
-        <input
+        <Input
           type="password"
           placeholder="Password"
           value={password}
@@ -49,7 +56,7 @@ export default function Login() {
         <br />
         <br />
 
-        <button type="submit">Sign In</button>
+        <Button type="submit">Sign In</Button>
       </form>
     </div>
   );
