@@ -4,6 +4,7 @@ import Login from "./pages/Login";
 import Placeholder from "./pages/Placeholder";
 import ProtectedRoute from "./components/ProtectedRoute";
 import CaseCreate from "./pages/CaseCreate";
+import AppShell from "./components/layout/AppShell";
 
 import CasePlaceholder from "./pages/CasePlaceholder";
 import EvidencePlaceholder from "./pages/EvidencePlaceholder";
@@ -22,7 +23,9 @@ function App() {
           path={ROUTES.CASES}
           element={
             <ProtectedRoute>
-              <CaseList />
+              <AppShell>
+                <CaseList />
+              </AppShell>
             </ProtectedRoute>
           }
         />
@@ -31,7 +34,9 @@ function App() {
           path={ROUTES.NEW_CASE}
           element={
             <ProtectedRoute>
-              <CaseCreate />
+              <AppShell>
+                <CaseCreate />
+              </AppShell>
             </ProtectedRoute>
           }
         />
@@ -39,7 +44,9 @@ function App() {
           path={ROUTES.CASE_DETAIL}
           element={
             <ProtectedRoute>
-              <CasePlaceholder />
+              <AppShell>
+                <CasePlaceholder />
+              </AppShell>
             </ProtectedRoute>
           }
         />
@@ -48,7 +55,9 @@ function App() {
           path={ROUTES.EVIDENCE}
           element={
             <ProtectedRoute>
-              <EvidencePlaceholder />
+              <AppShell>
+                <EvidencePlaceholder />
+              </AppShell>
             </ProtectedRoute>
           }
         />

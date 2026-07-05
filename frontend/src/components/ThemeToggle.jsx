@@ -6,6 +6,9 @@ export default function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
+      aria-label={
+        theme === "dark" ? "Switch to light theme" : "Switch to dark theme"
+      }
       style={{
         padding: "10px 18px",
         borderRadius: "8px",
@@ -15,7 +18,7 @@ export default function ThemeToggle() {
         cursor: "pointer",
       }}
     >
-      {theme === "light" ? "🌙 Dark Mode" : "☀️ Light Mode"}
+      {theme === "light" ? "Dark Mode" : "Light Mode"}
     </button>
   );
 }

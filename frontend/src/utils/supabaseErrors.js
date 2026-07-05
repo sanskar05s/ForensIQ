@@ -3,19 +3,23 @@ const ERROR_MAP = {
 
   "Email not confirmed": "Please verify your email before signing in.",
 
-  23505: "This Case ID is already in use.",
+  "User already registered": "An account with this email already exists.",
+
+  23505: "This record already exists.",
+
+  "JWT expired": "Your session has expired. Please sign in again.",
 
   default: "Something went wrong. Please try again.",
 };
 
-export function getReadableError(error) {
+export function parseSupabaseError(error) {
   if (!error) return ERROR_MAP.default;
 
-  if (ERROR_MAP[error.code]) {
-    return ERROR_MAP[error.code];
+  if (error.code && ERROR_MAP[String(error.code)]) {
+    return ERROR_MAP[String(error.code)];
   }
 
-  if (ERROR_MAP[error.message]) {
+  if (error.message && ERROR_MAP[error.message]) {
     return ERROR_MAP[error.message];
   }
 

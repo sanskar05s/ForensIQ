@@ -1,5 +1,10 @@
 import Placeholder from "./Placeholder";
+import AppShell from "../components/layout/AppShell";
 
 export default function CasePlaceholder() {
-  return <Placeholder title="Case Details" />;
+  return (
+    <AppShell>
+      <Placeholder title="Case Details" />
+    </AppShell>
+  );
 }

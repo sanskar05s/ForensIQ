@@ -1,8 +1,11 @@
 import { useState } from "react";
 
-import { createCase } from "../api/createCase";
+import { createCase } from "../supabase/db";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+
+import { generateCaseId } from "../utils/idGenerator";
+import { parseSupabaseError } from "../utils/supabaseErrors";
 
 import Input from "../components/ui/Input";
 import Select from "../components/ui/Select";
@@ -10,6 +13,7 @@ import Textarea from "../components/ui/Textarea";
 import Button from "../components/ui/Button";
 
 export default function CaseCreate() {
+  const [caseId, setCaseId] = useState(generateCaseId());
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [investigatorName, setInvestigatorName] = useState("");
@@ -28,12 +32,12 @@ export default function CaseCreate() {
     setError("");
 
     if (!title.trim()) {
-      alert("Title is required");
+      setError("Investigation title is required.");
       return;
     }
 
     if (!investigatorName.trim()) {
-      alert("Investigator name is required");
+      setError("Investigator name is required");
       return;
     }
 
@@ -41,6 +45,7 @@ export default function CaseCreate() {
 
     try {
       const { data, error } = await createCase({
+        case_id: caseId,
         title,
         description,
         investigator_name: investigatorName,
@@ -50,13 +55,13 @@ export default function CaseCreate() {
       });
 
       if (error) {
-        setError(error.message);
+        setError(error);
         return;
       }
-
+      alert("Investigation created successfully.");
       navigate("/cases");
     } catch (err) {
-      setError("Something went wrong. Please try again.");
+      setError(err.message || "Something went wrong.");
       console.error(err);
     } finally {
       setIsSubmitting(false);
@@ -88,6 +93,10 @@ export default function CaseCreate() {
         value={title}
         onChange={(e) => setTitle(e.target.value)}
       />
+      <Input label="Case ID" value={caseId} readOnly />
+      <Button type="button" onClick={() => setCaseId(generateCaseId())}>
+        Generate New ID
+      </Button>
       <Input
         placeholder="Investigator Name"
         value={investigatorName}

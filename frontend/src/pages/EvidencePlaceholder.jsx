@@ -1,5 +1,10 @@
 import Placeholder from "./Placeholder";
+import AppShell from "../components/layout/AppShell";
 
 export default function EvidencePlaceholder() {
-  return <Placeholder title="Evidence" />;
+  return (
+    <AppShell>
+      <Placeholder title="Evidence" />
+    </AppShell>
+  );
 }

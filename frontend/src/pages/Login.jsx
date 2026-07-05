@@ -1,20 +1,19 @@
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useAuth } from "../hooks/useAuth";
 
 import ThemeToggle from "../components/ThemeToggle";
+import { useNavigate } from "react-router-dom";
 
 export default function Login() {
   const { signIn, user, loading } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
-  // 👇 Add these two lines here
-  console.log({ user, loading });
+  const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -25,11 +24,12 @@ export default function Login() {
       alert(error.message);
       return;
     }
-
-    console.log("Login successful:", data);
-    alert("Login successful!");
   };
-
+  useEffect(() => {
+    if (!loading && user) {
+      navigate("/cases", { replace: true });
+    }
+  }, [user, loading, navigate]);
   return (
     <div style={{ padding: "40px" }}>
       <ThemeToggle />
