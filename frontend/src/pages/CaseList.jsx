@@ -194,80 +194,89 @@ export default function CaseList() {
       {!loading &&
         !error &&
         filteredCases.map((item) => (
-          <div
+          <Link
             key={item.id}
+            to={`/cases/${item.id}`}
             style={{
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border)",
-              borderRadius: "12px",
-              padding: "20px",
-              marginBottom: "16px",
+              textDecoration: "none",
+              color: "inherit",
+              display: "block",
             }}
           >
             <div
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "8px",
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border)",
+                borderRadius: "12px",
+                padding: "20px",
+                marginBottom: "16px",
               }}
             >
-              <h2
+              <div
                 style={{
-                  margin: 0,
-                  color: "var(--text-primary)",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "8px",
                 }}
               >
-                {item.title}
-              </h2>
+                <h2
+                  style={{
+                    margin: 0,
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  {item.title}
+                </h2>
 
-              <span
+                <span
+                  style={{
+                    fontFamily: "monospace",
+                    fontSize: "13px",
+                    color: "var(--text-secondary)",
+                    background: "var(--bg-muted)",
+                    padding: "4px 8px",
+                    borderRadius: "6px",
+                  }}
+                >
+                  {item.case_id}
+                </span>
+              </div>
+
+              <p
                 style={{
-                  fontFamily: "monospace",
-                  fontSize: "13px",
                   color: "var(--text-secondary)",
-                  background: "var(--bg-muted)",
-                  padding: "4px 8px",
-                  borderRadius: "6px",
                 }}
               >
-                {item.case_id}
-              </span>
-            </div>
+                {item.description || "No description"}
+              </p>
 
-            <p
-              style={{
-                color: "var(--text-secondary)",
-              }}
-            >
-              {item.description || "No description"}
-            </p>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, 1fr)",
+                  gap: "10px",
+                  marginTop: "16px",
+                }}
+              >
+                <div>
+                  <strong>Status:</strong> {item.status}
+                </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, 1fr)",
-                gap: "10px",
-                marginTop: "16px",
-              }}
-            >
-              <div>
-                <strong>Status:</strong> {item.status}
-              </div>
+                <div>
+                  <strong>Priority:</strong> {item.priority}
+                </div>
 
-              <div>
-                <strong>Priority:</strong> {item.priority}
-              </div>
+                <div>
+                  <strong>Evidence:</strong> {item.evidence_count}
+                </div>
 
-              <div>
-                <strong>Evidence:</strong> {item.evidence_count}
-              </div>
-
-              <div>
-                <strong>Witnesses:</strong> {item.witness_count}
+                <div>
+                  <strong>Witnesses:</strong> {item.witness_count}
+                </div>
               </div>
             </div>
-          </div>
+          </Link>
         ))}
     </div>
   );

@@ -53,3 +53,27 @@ export async function updateCase(caseId, updates) {
     error: error ? parseSupabaseError(error) : null,
   };
 }
+
+export async function getEvidenceByCase(caseId) {
+  const { data, error } = await supabase
+    .from("evidence")
+    .select("*")
+    .eq("case_id", caseId)
+    .order("uploaded_at", { ascending: false });
+
+  if (error) throw error;
+
+  return data;
+}
+
+export async function createEvidence(evidenceData) {
+  const { data, error } = await supabase
+    .from("evidence")
+    .insert(evidenceData)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  return data;
+}

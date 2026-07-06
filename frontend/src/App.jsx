@@ -5,12 +5,12 @@ import Placeholder from "./pages/Placeholder";
 import ProtectedRoute from "./components/ProtectedRoute";
 import CaseCreate from "./pages/CaseCreate";
 import AppShell from "./components/layout/AppShell";
-
+import CaseDetail from "./pages/CaseDetail";
 import CasePlaceholder from "./pages/CasePlaceholder";
 import EvidencePlaceholder from "./pages/EvidencePlaceholder";
-
+import EvidenceUpload from "./pages/EvidenceUpload";
 import { ROUTES } from "./constants";
-
+import EvidenceDetail from "./pages/EvidenceDetail";
 function App() {
   return (
     <BrowserRouter>
@@ -44,9 +44,7 @@ function App() {
           path={ROUTES.CASE_DETAIL}
           element={
             <ProtectedRoute>
-              <AppShell>
-                <CasePlaceholder />
-              </AppShell>
+              <CaseDetail />
             </ProtectedRoute>
           }
         />
@@ -66,7 +64,7 @@ function App() {
           path={ROUTES.NEW_EVIDENCE}
           element={
             <ProtectedRoute>
-              <EvidencePlaceholder />
+              <EvidenceUpload />
             </ProtectedRoute>
           }
         />
@@ -75,7 +73,7 @@ function App() {
           path={ROUTES.EVIDENCE_DETAIL}
           element={
             <ProtectedRoute>
-              <EvidencePlaceholder />
+              <EvidenceDetail />
             </ProtectedRoute>
           }
         />
