@@ -6,16 +6,12 @@ function getIcon(type) {
   switch (type?.toLowerCase()) {
     case "image":
       return <ImageIcon size={20} color="#16a34a" />;
-
     case "document":
       return <FileText size={20} color="#2563eb" />;
-
     case "video":
       return <Video size={20} color="#9333ea" />;
-
     case "audio":
       return <Music size={20} color="#ea580c" />;
-
     default:
       return <FileText size={20} />;
   }
@@ -23,11 +19,8 @@ function getIcon(type) {
 
 function formatFileSize(bytes) {
   if (!bytes) return "Unknown";
-
   if (bytes < 1024) return `${bytes} B`;
-
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
@@ -35,16 +28,12 @@ function getStatusColor(status) {
   switch (status) {
     case "uploaded":
       return "#6b7280";
-
     case "analyzing":
       return "#eab308";
-
     case "analyzed":
       return "#16a34a";
-
     case "failed":
       return "#dc2626";
-
     default:
       return "#6b7280";
   }
@@ -69,6 +58,13 @@ export default function EvidenceCard({ evidence, onClick }) {
         (e.currentTarget.style.borderColor = "var(--border)")
       }
     >
+      <style>{`
+        @keyframes forensiq-pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
+
       <div
         style={{
           display: "flex",
@@ -85,6 +81,10 @@ export default function EvidenceCard({ evidence, onClick }) {
             borderRadius: "999px",
             background: getStatusColor(evidence.status),
             color: "#fff",
+            animation:
+              evidence.status === "analyzing"
+                ? "forensiq-pulse 2s ease-in-out infinite"
+                : undefined,
           }}
         >
           {evidence.status}
@@ -126,9 +126,10 @@ export default function EvidenceCard({ evidence, onClick }) {
         evidence.analysis_confidence != null && (
           <p
             style={{
-              marginTop: "8px",
-              color: "var(--accent)",
-              fontFamily: "monospace",
+              marginTop: "6px",
+              color: "var(--text-muted)",
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: "11px",
             }}
           >
             {(evidence.analysis_confidence * 100).toFixed(0)}% confidence

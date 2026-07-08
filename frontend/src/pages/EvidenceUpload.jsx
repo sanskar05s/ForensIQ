@@ -9,6 +9,7 @@ import Spinner from "../components/loading/Spinner";
 
 import { uploadEvidence } from "../supabase/storage";
 import { createEvidence } from "../supabase/db";
+import { apiClient } from "../api/client";
 
 import { parseSupabaseError } from "../utils/supabaseErrors";
 
@@ -22,6 +23,7 @@ export default function EvidenceUpload() {
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [statusLabel, setStatusLabel] = useState("");
 
   function detectType(file) {
     if (!file) return "";
@@ -115,15 +117,20 @@ export default function EvidenceUpload() {
 
     setUploading(true);
     setError("");
+    setStatusLabel("");
 
     try {
+      // Step 1: Upload to Supabase Storage
+      setStatusLabel("Uploading...");
       const upload = await uploadEvidence(caseId, file);
 
       if (upload.error) {
         throw upload.error;
       }
 
-      const { error: dbError } = await createEvidence({
+      // Step 2: Insert evidence record
+      setStatusLabel("Saving...");
+      const evidence = await createEvidence({
         case_id: caseId,
         filename: file.name,
         type: detectType(file),
@@ -132,18 +139,44 @@ export default function EvidenceUpload() {
         mime_type: file.type,
         status: "uploaded",
       });
-      if (dbError) {
-        throw dbError;
+
+      // Step 3: Trigger image analysis (best-effort)
+      const evidenceType = detectType(file);
+      if (evidenceType === "image") {
+        setStatusLabel("Analyzing...");
+        try {
+          await apiClient(
+            `/visual/cases/${caseId}/evidence/${evidence.id}/analyze-image`,
+            { method: "POST" }
+          );
+        } catch (e) {
+          // Best-effort — don't block on analysis failure
+        }
       }
 
-      alert("Evidence uploaded successfully.");
+      // Step 4: Blockchain anchoring (best-effort, only if hash available)
+      if (evidence.file_hash) {
+        setStatusLabel("Anchoring to blockchain...");
+        try {
+          await apiClient("/blockchain/write", {
+            method: "POST",
+            body: JSON.stringify({
+              evidence_id: evidence.id,
+              sha256: evidence.file_hash,
+            }),
+          });
+        } catch (e) {
+          // Best-effort — don't block on blockchain failure
+        }
+      }
 
-      setTimeout(() => {
-        navigate(`/cases/${caseId}`);
-      }, 1000);
+      // Step 5: Done
+      setStatusLabel("Complete ✓");
+      setTimeout(() => navigate(`/cases/${caseId}`), 1500);
     } catch (err) {
-      console.error("Evidence Insert Error:", err);
       setError(parseSupabaseError(err));
+      // Still navigate on critical failure after delay
+      setTimeout(() => navigate(`/cases/${caseId}`), 2000);
     } finally {
       setUploading(false);
     }
@@ -343,6 +376,27 @@ export default function EvidenceUpload() {
             )}
           </Button>
         </div>
+
+        {statusLabel && (
+          <div
+            style={{
+              marginTop: "16px",
+              textAlign: "center",
+              color: statusLabel.includes("✓")
+                ? "var(--success)"
+                : "var(--accent)",
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: "13px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+            }}
+          >
+            {!statusLabel.includes("✓") && <Spinner size={14} />}
+            {statusLabel}
+          </div>
+        )}
       </div>
     </AppShell>
   );
