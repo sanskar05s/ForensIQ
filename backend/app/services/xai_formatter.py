@@ -23,6 +23,21 @@ def build_analysis(
     }
 
 
+def format_ocr_xai(text: str, confidence: float) -> dict:
+    """
+    XAI explanation for a single OCR text extraction result.
+    Returns a dict with xai_reason, model_used, and confidence.
+    """
+    return {
+        "xai_reason": (
+            f"Text \"{text}\" extracted with {confidence * 100:.0f}% confidence "
+            f"by the EasyOCR engine."
+        ),
+        "model_used": "EasyOCR",
+        "confidence": round(float(confidence), 3),
+    }
+
+
 def build_error(message: str):
     return {
         "success": False,

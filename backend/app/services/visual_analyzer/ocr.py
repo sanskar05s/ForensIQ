@@ -1,32 +1,28 @@
 import easyocr
-from app.services.xai_formatter import build_analysis
+import numpy as np
+from PIL import Image
 
-_reader = None
+from app.services.xai_formatter import format_ocr_xai
 
-def get_reader():
-    global _reader
-    if _reader is None:
-        _reader = easyocr.Reader(['en'], gpu=False)
-    return _reader
-
-import easyocr
-
-from app.services.xai_formatter import build_analysis
-
-# Load EasyOCR once (cached)
 _reader = None
 
 
 def get_reader():
     global _reader
+
     if _reader is None:
         _reader = easyocr.Reader(["en"], gpu=False)
+
     return _reader
 
 
 def extract_text(image_path: str, threshold: float = 0.70) -> list:
     """
-    Runs EasyOCR on an image.
+    Runs EasyOCR on an image file.
+
+    Pre-processes the image to a consistent RGB numpy array
+    to prevent shape unpacking errors when the image has an
+    alpha channel or unusual format.
 
     Returns:
     [
@@ -34,39 +30,37 @@ def extract_text(image_path: str, threshold: float = 0.70) -> list:
             "text": "...",
             "confidence": 0.98,
             "low_confidence": False,
-            "analysis": {...},
-            "model_used": "EasyOCR"
+            "xai_reason": "..."
         }
     ]
     """
 
     reader = get_reader()
-    results = reader.readtext(image_path)
+
+    # Pre-process to RGB numpy array — prevents shape unpacking
+    # errors when image has alpha channel or unusual format
+    img = Image.open(image_path).convert("RGB")
+    img_array = np.array(img)
+
+    results = reader.readtext(img_array)
 
     output = []
 
     for (_, text, confidence) in results:
 
-        if not text.strip():
+        text = text.strip()
+
+        if not text:
             continue
 
-        analysis = build_analysis(
-            model="EasyOCR",
-            findings=[text.strip()],
-            confidence=confidence,
-            summary=f'Extracted text "{text.strip()}".',
-            metadata={
-                "low_confidence": confidence < threshold
-            }
-        )
+        xai = format_ocr_xai(text, confidence)
 
         output.append(
             {
-                "text": text.strip(),
-                "confidence": round(confidence, 3),
-                "low_confidence": confidence < threshold,
-                "analysis": analysis,
-                "model_used": "EasyOCR",
+                "text": text,
+                "confidence": round(float(confidence), 3),
+                "low_confidence": bool(confidence < threshold),
+                "xai_reason": xai["xai_reason"],
             }
         )
 

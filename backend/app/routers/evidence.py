@@ -1,9 +1,11 @@
 from pathlib import Path
 import shutil
 import tempfile
+import uuid
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
+from app.core.supabase import get_supabase_client
 from app.services.blockchain.sha256_hasher import hash_file
 
 router = APIRouter(
@@ -13,43 +15,75 @@ router = APIRouter(
 
 
 @router.post("/upload")
-async def upload_evidence(file: UploadFile = File(...)):
+async def upload_evidence(
+    case_id: str = Form(...),
+    type: str = Form(...),
+    file: UploadFile = File(...)
+):
     """
-    Uploads an evidence file.
+    Upload evidence.
 
-    M1-C:
-    - Saves file temporarily
-    - Computes SHA-256 hash
-    - Returns hash
-
-    Future milestones:
-    - OCR
-    - Object Detection
-    - Scene Classification
-    - Database insert
-    - Blockchain write
+    M1-C
+    - Upload to Supabase Storage
+    - Compute SHA-256
+    - Insert evidence row
     """
+
+    supabase = get_supabase_client()
+
+    temp_path = None
 
     try:
         suffix = Path(file.filename).suffix
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-            shutil.copyfileobj(file.file, temp_file)
-            temp_path = temp_file.name
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp:
+            shutil.copyfileobj(file.file, temp)
+            temp_path = temp.name
 
+        # SHA256
         file_hash = hash_file(temp_path)
+
+        # Generate storage path
+        storage_name = f"{case_id}/{uuid.uuid4()}{suffix}"
+
+        # Upload to Supabase Storage
+        with open(temp_path, "rb") as f:
+            response = supabase.storage.from_("evidence").upload(
+                storage_name,
+                f,
+                {
+                    "content-type": file.content_type
+                }
+            )
+
+        # Insert database row
+        result = (
+            supabase.table("evidence")
+            .insert({
+                "case_id": case_id,
+                "type": type,
+                "filename": file.filename,
+                "storage_path": storage_name,
+                "file_size": Path(temp_path).stat().st_size,
+                "mime_type": file.content_type,
+                "status": "uploaded",
+                "file_hash": file_hash
+            })
+            .execute()
+        )
+
+        evidence = result.data[0]
 
         return {
             "success": True,
-            "filename": file.filename,
-            "sha256": file_hash
+            "evidence_id": evidence["id"],
+            "sha256": file_hash,
+            "storage_path": storage_name
         }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        try:
-            Path(temp_path).unlink(missing_ok=True)
-        except Exception:
-            pass
+        if temp_path and Path(temp_path).exists():
+            Path(temp_path).unlink()
