@@ -6,6 +6,7 @@ from app.routers.cases import router as cases_router
 from app.routers.evidence import router as evidence_router
 from app.routers.visual import router as visual_router
 from app.routers.blockchain import router as blockchain_router
+from app.routers.doc_metadata import router as doc_metadata_router
 
 app = FastAPI(
     title="ForensIQ API",
@@ -31,6 +32,7 @@ app.include_router(cases_router, prefix="/api")
 app.include_router(evidence_router, prefix="/api")
 app.include_router(visual_router, prefix="/api")
 app.include_router(blockchain_router, prefix="/api")
+app.include_router(doc_metadata_router, prefix="/api")
 
 
 @app.get("/")
