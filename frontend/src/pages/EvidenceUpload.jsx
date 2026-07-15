@@ -140,10 +140,10 @@ export default function EvidenceUpload() {
         status: "uploaded",
       });
 
-      // Step 3: Trigger image analysis (best-effort)
+      // Step 3: Trigger analysis based on evidence type (best-effort)
       const evidenceType = detectType(file);
       if (evidenceType === "image") {
-        setStatusLabel("Analyzing...");
+        setStatusLabel("Analyzing image...");
         try {
           await apiClient(
             `/visual/cases/${caseId}/evidence/${evidence.id}/analyze-image`,
@@ -151,6 +151,16 @@ export default function EvidenceUpload() {
           );
         } catch (e) {
           // Best-effort — don't block on analysis failure
+        }
+      } else if (evidenceType === "document") {
+        setStatusLabel("Extracting document content...");
+        try {
+          await apiClient(
+            `/doc/cases/${caseId}/evidence/${evidence.id}/extract-document`,
+            { method: "POST" }
+          );
+        } catch (e) {
+          // Best-effort — don't block on extraction failure
         }
       }
 

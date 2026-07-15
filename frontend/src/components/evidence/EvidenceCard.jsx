@@ -135,6 +135,21 @@ export default function EvidenceCard({ evidence, onClick }) {
             {(evidence.analysis_confidence * 100).toFixed(0)}% confidence
           </p>
         )}
+
+      {evidence.status === "analyzed" &&
+        evidence.type === "document" &&
+        evidence.extracted_text && (
+          <p
+            style={{
+              marginTop: "4px",
+              color: "var(--text-muted)",
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: "11px",
+            }}
+          >
+            {evidence.extracted_text.length} chars extracted
+          </p>
+        )}
     </div>
   );
 }

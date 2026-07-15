@@ -543,26 +543,73 @@ export default function EvidenceDetail() {
 
   function renderMetadataTab() {
     const meta = evidence.exif_metadata || evidence.media_metadata;
-    if (!meta || Object.keys(meta).length === 0) {
+    const integrity = evidence.integrity_flag;
+    const hasMeta = meta && Object.keys(meta).length > 0;
+
+    if (!hasMeta && !integrity) {
       return <p style={emptyStyle}>No metadata extracted.</p>;
     }
     return (
-      <div style={cardStyle}>
-        {Object.entries(meta).map(([key, value]) => (
+      <>
+        {hasMeta && (
+          <div style={cardStyle}>
+            {Object.entries(meta).map(([key, value]) => (
+              <div
+                key={key}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "8px 0",
+                  borderBottom: "1px solid var(--border)",
+                }}
+              >
+                <span style={{ color: "var(--text-muted)", fontSize: "13px" }}>{key}</span>
+                <span style={{ ...monoStyle, fontSize: "13px" }}>
+                  {typeof value === "object" ? JSON.stringify(value) : String(value)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {integrity && integrity.flagged === true && (
           <div
-            key={key}
             style={{
+              marginTop: "16px",
+              padding: "14px 16px",
+              borderRadius: "var(--radius-md)",
+              background: "rgba(245,158,11,0.12)",
+              border: "1px solid var(--warning)",
+              color: "var(--warning)",
+              fontSize: "13px",
               display: "flex",
-              justifyContent: "space-between",
-              padding: "8px 0",
-              borderBottom: "1px solid var(--border)",
+              alignItems: "flex-start",
+              gap: "8px",
             }}
           >
-            <span style={{ color: "var(--text-muted)", fontSize: "13px" }}>{key}</span>
-            <span style={{ ...monoStyle, fontSize: "13px" }}>{String(value)}</span>
+            <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: "1px" }} />
+            <span>Integrity Warning: {integrity.note}</span>
           </div>
-        ))}
-      </div>
+        )}
+        {integrity && integrity.flagged === false && (
+          <div
+            style={{
+              marginTop: "16px",
+              padding: "14px 16px",
+              borderRadius: "var(--radius-md)",
+              background: "rgba(16,185,129,0.12)",
+              border: "1px solid var(--success)",
+              color: "var(--success)",
+              fontSize: "13px",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+            }}
+          >
+            <Shield size={16} />
+            No integrity issues detected.
+          </div>
+        )}
+      </>
     );
   }
 
@@ -571,21 +618,38 @@ export default function EvidenceDetail() {
       return <p style={emptyStyle}>No text extracted from this document.</p>;
     }
     return (
-      <div
-        style={{
-          maxHeight: "400px",
-          overflowY: "auto",
-          background: "var(--bg-muted)",
-          padding: "16px",
-          borderRadius: "var(--radius-md)",
-          fontFamily: "Inter, sans-serif",
-          fontSize: "13px",
-          lineHeight: 1.7,
-          whiteSpace: "pre-wrap",
-        }}
-      >
-        {evidence.extracted_text}
-      </div>
+      <>
+        {evidence.xai_summary && (
+          <div
+            style={{
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-md)",
+              padding: "12px 16px",
+              marginBottom: "16px",
+              fontSize: "13px",
+              color: "var(--text-secondary)",
+            }}
+          >
+            Extraction summary: {evidence.xai_summary}
+          </div>
+        )}
+        <div
+          style={{
+            maxHeight: "400px",
+            overflowY: "auto",
+            background: "var(--bg-muted)",
+            padding: "16px",
+            borderRadius: "var(--radius-md)",
+            fontFamily: "Inter, sans-serif",
+            fontSize: "13px",
+            lineHeight: 1.7,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {evidence.extracted_text}
+        </div>
+      </>
     );
   }
 
