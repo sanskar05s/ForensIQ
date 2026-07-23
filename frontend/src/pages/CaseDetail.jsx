@@ -161,7 +161,9 @@ export default function CaseDetail() {
         <ModuleCard
           icon={<Users />}
           title="Witnesses"
-          description="Witness management."
+          description={`${case_.witness_count || 0} statements`}
+          active
+          onClick={() => navigate(`/cases/${caseId}/witnesses`)}
         />
 
         <ModuleCard

@@ -11,6 +11,7 @@ import EvidencePlaceholder from "./pages/EvidencePlaceholder";
 import EvidenceUpload from "./pages/EvidenceUpload";
 import { ROUTES } from "./constants";
 import EvidenceDetail from "./pages/EvidenceDetail";
+import WitnessStatements from "./pages/WitnessStatements";
 function App() {
   return (
     <BrowserRouter>
@@ -82,7 +83,7 @@ function App() {
           path={ROUTES.WITNESSES}
           element={
             <ProtectedRoute>
-              <Placeholder title="Witnesses" />
+              <WitnessStatements />
             </ProtectedRoute>
           }
         />
