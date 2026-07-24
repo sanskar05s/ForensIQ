@@ -79,11 +79,21 @@ export default function Sidebar() {
           </div>
         )}
 
-        <div style={{ ...itemStyle, ...disabledStyle }}>
-          <GitMerge size={18} />
-          Contradictions
-          <span style={{ marginLeft: "auto", fontSize: 11 }}>SOON</span>
-        </div>
+        {caseId ? (
+          <Link
+            to={`/cases/${caseId}/contradictions`}
+            style={itemStyle}
+          >
+            <GitMerge size={18} />
+            Contradictions
+          </Link>
+        ) : (
+          <div style={{ ...itemStyle, ...disabledStyle }}>
+            <GitMerge size={18} />
+            Contradictions
+            <span style={{ marginLeft: "auto", fontSize: 11 }}>SOON</span>
+          </div>
+        )}
 
         <div style={{ ...itemStyle, ...disabledStyle }}>
           <Clock size={18} />

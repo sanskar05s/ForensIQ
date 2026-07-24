@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -19,10 +20,12 @@ import { useEvidence } from "../hooks/useEvidence";
 
 import ModuleCard from "../components/case/ModuleCard";
 import EvidenceCard from "../components/evidence/EvidenceCard";
+import StaleBanner from "../components/case/StaleBanner";
 
 import Spinner from "../components/loading/Spinner";
 import SkeletonCard from "../components/loading/SkeletonCard";
 
+import { apiClient } from "../api/client";
 import { relativeTime } from "../utils/relativeTime";
 
 export default function CaseDetail() {
@@ -30,8 +33,21 @@ export default function CaseDetail() {
   const navigate = useNavigate();
 
   const { case_, loading, error, refresh } = useCaseDetail(caseId);
-
   const { evidence, loading: evidenceLoading } = useEvidence(caseId);
+
+  const [isStale, setIsStale] = useState(false);
+  const [staleDismissed, setStaleDismissed] = useState(false);
+  const [contradictionCount, setContradictionCount] = useState(0);
+
+  useEffect(() => {
+    if (!caseId) return;
+    apiClient(`/contradiction/cases/${caseId}/staleness`)
+      .then((res) => setIsStale(res.stale))
+      .catch(() => {});
+    apiClient(`/contradiction/cases/${caseId}`)
+      .then((res) => setContradictionCount((res.contradictions || []).length))
+      .catch(() => {});
+  }, [caseId]);
 
   if (loading) {
     return (
@@ -64,6 +80,12 @@ export default function CaseDetail() {
 
   return (
     <div>
+      {isStale && !staleDismissed && (
+        <StaleBanner
+          caseId={caseId}
+          onDismiss={() => setStaleDismissed(true)}
+        />
+      )}
       {/* Header */}
 
       <button
@@ -169,7 +191,9 @@ export default function CaseDetail() {
         <ModuleCard
           icon={<GitMerge />}
           title="Contradictions"
-          description="AI contradiction analysis."
+          description={`${contradictionCount} contradiction(s) found`}
+          active
+          onClick={() => navigate(`/cases/${caseId}/contradictions`)}
         />
 
         <ModuleCard

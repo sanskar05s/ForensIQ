@@ -12,6 +12,7 @@ import EvidenceUpload from "./pages/EvidenceUpload";
 import { ROUTES } from "./constants";
 import EvidenceDetail from "./pages/EvidenceDetail";
 import WitnessStatements from "./pages/WitnessStatements";
+import ContradictionReport from "./pages/ContradictionReport";
 function App() {
   return (
     <BrowserRouter>
@@ -92,7 +93,7 @@ function App() {
           path={ROUTES.CONTRADICTIONS}
           element={
             <ProtectedRoute>
-              <Placeholder title="Contradictions" />
+              <ContradictionReport />
             </ProtectedRoute>
           }
         />
