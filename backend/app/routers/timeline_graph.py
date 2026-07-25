@@ -207,11 +207,16 @@ async def get_graph(case_id: str):
     result = supabase.table("knowledge_graphs")\
         .select("*")\
         .eq("case_id", case_id)\
-        .single()\
         .execute()
-    if not result.data:
-        return {"graph": None, "message": "Graph not yet built for this case"}
-    return {"graph": result.data}
+    rows = result.data or []
+    if not rows:
+        return {"nodes": [], "edges": [], "sna_metrics": {}, "message": "Graph not yet built for this case"}
+    row = rows[0]
+    return {
+        "nodes": row.get("nodes") or [],
+        "edges": row.get("edges") or [],
+        "sna_metrics": row.get("sna_metrics") or {},
+    }
 
 
 @graph_router.get("/graph/cases/{case_id}/staleness")

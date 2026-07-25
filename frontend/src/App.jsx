@@ -13,6 +13,8 @@ import { ROUTES } from "./constants";
 import EvidenceDetail from "./pages/EvidenceDetail";
 import WitnessStatements from "./pages/WitnessStatements";
 import ContradictionReport from "./pages/ContradictionReport";
+import Timeline from "./pages/Timeline";
+import KnowledgeGraph from "./pages/KnowledgeGraph";
 function App() {
   return (
     <BrowserRouter>
@@ -102,7 +104,7 @@ function App() {
           path={ROUTES.TIMELINE}
           element={
             <ProtectedRoute>
-              <Placeholder title="Timeline" />
+              <Timeline />
             </ProtectedRoute>
           }
         />
@@ -111,7 +113,7 @@ function App() {
           path={ROUTES.KNOWLEDGE_GRAPH}
           element={
             <ProtectedRoute>
-              <Placeholder title="Knowledge Graph" />
+              <KnowledgeGraph />
             </ProtectedRoute>
           }
         />

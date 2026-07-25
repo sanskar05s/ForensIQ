@@ -95,17 +95,31 @@ export default function Sidebar() {
           </div>
         )}
 
-        <div style={{ ...itemStyle, ...disabledStyle }}>
-          <Clock size={18} />
-          Timeline
-          <span style={{ marginLeft: "auto", fontSize: 11 }}>SOON</span>
-        </div>
+        {caseId ? (
+          <Link to={`/cases/${caseId}/timeline`} style={itemStyle}>
+            <Clock size={18} />
+            Timeline
+          </Link>
+        ) : (
+          <div style={{ ...itemStyle, ...disabledStyle }}>
+            <Clock size={18} />
+            Timeline
+            <span style={{ marginLeft: "auto", fontSize: 11 }}>SOON</span>
+          </div>
+        )}
 
-        <div style={{ ...itemStyle, ...disabledStyle }}>
-          <Share2 size={18} />
-          Knowledge Graph
-          <span style={{ marginLeft: "auto", fontSize: 11 }}>SOON</span>
-        </div>
+        {caseId ? (
+          <Link to={`/cases/${caseId}/knowledge-graph`} style={itemStyle}>
+            <Share2 size={18} />
+            Knowledge Graph
+          </Link>
+        ) : (
+          <div style={{ ...itemStyle, ...disabledStyle }}>
+            <Share2 size={18} />
+            Knowledge Graph
+            <span style={{ marginLeft: "auto", fontSize: 11 }}>SOON</span>
+          </div>
+        )}
 
         <div style={{ ...itemStyle, ...disabledStyle }}>
           <FileText size={18} />

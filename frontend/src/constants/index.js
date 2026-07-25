@@ -59,3 +59,12 @@ export const EVIDENCE_STATUS = {
 };
 
 export const CONFIDENCE_THRESHOLD = 0.7;
+
+export const NODE_COLORS = {
+  PERSON: "#3B82F6",
+  LOCATION: "#10B981",
+  TIME: "#8B5CF6",
+  OBJECT: "#F59E0B",
+  ORGANIZATION: "#EC4899",
+  EVENT: "#06B6D4",
+};

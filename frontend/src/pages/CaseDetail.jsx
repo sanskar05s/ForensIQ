@@ -35,17 +35,39 @@ export default function CaseDetail() {
   const { case_, loading, error, refresh } = useCaseDetail(caseId);
   const { evidence, loading: evidenceLoading } = useEvidence(caseId);
 
-  const [isStale, setIsStale] = useState(false);
+  const [staleModules, setStaleModules] = useState([]);
   const [staleDismissed, setStaleDismissed] = useState(false);
   const [contradictionCount, setContradictionCount] = useState(0);
+  const [timelineCount, setTimelineCount] = useState(0);
+  const [graphNodeCount, setGraphNodeCount] = useState(0);
 
   useEffect(() => {
     if (!caseId) return;
-    apiClient(`/contradiction/cases/${caseId}/staleness`)
-      .then((res) => setIsStale(res.stale))
-      .catch(() => {});
+    const stale = [];
+    const checkStale = async () => {
+      try {
+        const r1 = await apiClient(`/contradiction/cases/${caseId}/staleness`);
+        if (r1.stale) stale.push("contradictions");
+      } catch {}
+      try {
+        const r2 = await apiClient(`/timeline/cases/${caseId}/staleness`);
+        if (r2.stale) stale.push("timeline");
+      } catch {}
+      try {
+        const r3 = await apiClient(`/graph/cases/${caseId}/staleness`);
+        if (r3.stale) stale.push("graph");
+      } catch {}
+      setStaleModules(stale);
+    };
+    checkStale();
     apiClient(`/contradiction/cases/${caseId}`)
       .then((res) => setContradictionCount((res.contradictions || []).length))
+      .catch(() => {});
+    apiClient(`/timeline/cases/${caseId}`)
+      .then((res) => setTimelineCount((res.events || []).length))
+      .catch(() => {});
+    apiClient(`/graph/cases/${caseId}`)
+      .then((res) => setGraphNodeCount((res.nodes || []).length))
       .catch(() => {});
   }, [caseId]);
 
@@ -80,9 +102,10 @@ export default function CaseDetail() {
 
   return (
     <div>
-      {isStale && !staleDismissed && (
+      {staleModules.length > 0 && !staleDismissed && (
         <StaleBanner
           caseId={caseId}
+          staleModules={staleModules}
           onDismiss={() => setStaleDismissed(true)}
         />
       )}
@@ -199,13 +222,17 @@ export default function CaseDetail() {
         <ModuleCard
           icon={<Clock />}
           title="Timeline"
-          description="Chronological reconstruction."
+          description={`${timelineCount} events`}
+          active
+          onClick={() => navigate(`/cases/${caseId}/timeline`)}
         />
 
         <ModuleCard
           icon={<Share2 />}
           title="Knowledge Graph"
-          description="Relationship visualization."
+          description={`${graphNodeCount} entities`}
+          active
+          onClick={() => navigate(`/cases/${caseId}/knowledge-graph`)}
         />
 
         <ModuleCard
