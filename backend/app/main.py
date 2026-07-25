@@ -9,6 +9,8 @@ from app.routers.blockchain import router as blockchain_router
 from app.routers.doc_metadata import router as doc_metadata_router
 from app.routers.witness_nlp import router as witness_nlp_router
 from app.routers import contradiction
+from app.routers import timeline_graph
+
 
 app = FastAPI(
     title="ForensIQ API",
@@ -37,7 +39,15 @@ app.include_router(blockchain_router, prefix="/api")
 app.include_router(doc_metadata_router, prefix="/api")
 app.include_router(witness_nlp_router, prefix="/api")
 app.include_router(contradiction.router, prefix="/api")
+app.include_router(
+    timeline_graph.timeline_router,
+    prefix="/api"
+)
 
+app.include_router(
+    timeline_graph.graph_router,
+    prefix="/api"
+)
 
 @app.get("/")
 def root():
