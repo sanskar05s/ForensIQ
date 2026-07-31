@@ -1,6 +1,6 @@
 import re
 from typing import List, Dict, Optional
-from app.services.contradiction.claim_extractor import extract_all_claims
+from app.services.contradiction.claim_extractor import extract_all_claims, _normalize_count
 
 # Opposite direction pairs
 OPPOSITE_DIRECTIONS = {

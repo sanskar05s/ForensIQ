@@ -21,6 +21,7 @@ import { useEvidence } from "../hooks/useEvidence";
 import ModuleCard from "../components/case/ModuleCard";
 import EvidenceCard from "../components/evidence/EvidenceCard";
 import StaleBanner from "../components/case/StaleBanner";
+import AppShell from "../components/layout/AppShell";
 
 import Spinner from "../components/loading/Spinner";
 import SkeletonCard from "../components/loading/SkeletonCard";
@@ -101,6 +102,7 @@ export default function CaseDetail() {
   }
 
   return (
+    <AppShell>
     <div>
       {staleModules.length > 0 && !staleDismissed && (
         <StaleBanner
@@ -326,5 +328,6 @@ export default function CaseDetail() {
         </div>
       )}
     </div>
+    </AppShell>
   );
 }

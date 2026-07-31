@@ -95,7 +95,6 @@ async def extract_document(case_id: str, evidence_id: str):
                 "status": "analyzed",
                 "analyzed_at": datetime.now(timezone.utc).isoformat(),
                 "extracted_text": text_result.get("text", ""),
-                "char_count": text_result.get("char_count", 0),
                 "exif_metadata": metadata_result,
                 "integrity_flag": integrity_result,
                 "xai_summary": xai_summary,
