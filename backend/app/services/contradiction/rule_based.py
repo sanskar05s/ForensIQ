@@ -144,41 +144,80 @@ def check_color_contradiction(claims_a: List[Dict],
 
 def check_quantity_contradiction(claims_a: List[Dict],
                                   claims_b: List[Dict]) -> Optional[Dict]:
-    """Flags if different quantities are reported for comparable claims."""
+    """
+    Flags quantity contradictions only between the same semantic type.
+
+    actor_count vs actor_count    ← valid
+    object_count vs object_count  ← valid
+    vehicle_count vs vehicle_count ← valid
+    actor_count vs duration       ← NEVER compared (different types)
+    """
     for ca in claims_a:
         for cb in claims_b:
-            val_a = ca["extracted_value"]
-            val_b = cb["extracted_value"]
-            if val_a != val_b:
-                try:
-                    diff = abs(int(val_a) - int(val_b))
-                    if diff > 0:
-                        severity = "HIGH" if diff > 2 else "MEDIUM"
-                        return {
-                            "type": "quantity",
-                            "tier": 1,
-                            "claim_a": ca["sentence"],
-                            "claim_b": cb["sentence"],
-                            "severity": severity,
-                            "xai_explanation": (
-                                f"Rule-based QUANTITY contradiction detected. "
-                                f"Witness A reports quantity '{val_a}'. "
-                                f"Witness B reports quantity '{val_b}'. "
-                                f"Difference of {diff} for a comparable claim."
-                            )
-                        }
-                except ValueError:
-                    pass
-    return None
 
+            # Enforce semantic type match — never compare across types
+            type_a = ca.get("semantic_type", "unknown")
+            type_b = cb.get("semantic_type", "unknown")
+            if type_a != type_b:
+                continue
+
+            val_a = _normalize_count(ca["extracted_value"])
+            val_b = _normalize_count(cb["extracted_value"])
+
+            if val_a is None or val_b is None:
+                continue
+            if val_a == val_b:
+                continue
+
+            diff = abs(val_a - val_b)
+            severity = "HIGH" if diff > 1 else "MEDIUM"
+
+            type_labels = {
+                "actor_count":   "number of people",
+                "object_count":  "number of items",
+                "vehicle_count": "number of vehicles",
+            }
+            label = type_labels.get(type_a, "quantity")
+
+            return {
+                "type": "quantity",
+                "tier": 1,
+                "claim_a": ca["sentence"],
+                "claim_b": cb["sentence"],
+                "severity": severity,
+                "xai_explanation": (
+                    f"Rule-based QUANTITY contradiction detected. "
+                    f"Witnesses report different {label}. "
+                    f"Witness A states: {val_a}. "
+                    f"Witness B states: {val_b}. "
+                    f"Difference: {diff}."
+                )
+            }
+    return None
 
 def check_direction_contradiction(claims_a: List[Dict],
                                    claims_b: List[Dict]) -> Optional[Dict]:
-    """Flags directly opposing directional claims."""
+    """
+    Flags directly opposing directional claims.
+
+    Skips pairs where BOTH claims are self-location statements.
+    Rationale: "I was inside the store" vs "I was outside the store"
+    describes two different witnesses at different locations — not a
+    contradiction about the same event or subject.
+
+    Only flags when at least one claim describes a subject's movement
+    (not just the witness's own static position).
+    """
     for ca in claims_a:
         for cb in claims_b:
+
+            # Skip: both witnesses describing their own static positions.
+            if ca.get("is_self_location") and cb.get("is_self_location"):
+                continue
+
             dir_a = ca["extracted_value"]
             dir_b = cb["extracted_value"]
+
             if frozenset([dir_a, dir_b]) in OPPOSITE_DIRECTIONS:
                 return {
                     "type": "direction",
@@ -190,11 +229,11 @@ def check_direction_contradiction(claims_a: List[Dict],
                         f"Rule-based DIRECTION contradiction detected. "
                         f"Witness A states direction '{dir_a}'. "
                         f"Witness B states direction '{dir_b}'. "
-                        f"These are directly opposing directions."
+                        f"These are directly opposing directions describing "
+                        f"the same event or subject."
                     )
                 }
     return None
-
 
 def run_tier1(statement_a: Dict, statement_b: Dict) -> List[Dict]:
     """
