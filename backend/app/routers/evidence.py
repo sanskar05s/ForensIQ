@@ -7,6 +7,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.core.supabase import get_supabase_client
 from app.services.blockchain.sha256_hasher import hash_file
+from app.services.activity_logger import log_activity
 
 router = APIRouter(
     prefix="/evidence",
@@ -73,6 +74,13 @@ async def upload_evidence(
         )
 
         evidence = result.data[0]
+
+        log_activity(
+            case_id=case_id,
+            event_type="evidence_uploaded",
+            description=f"Evidence '{file.filename}' uploaded ({type})",
+            metadata={"evidence_id": evidence["id"], "type": type, "filename": file.filename},
+        )
 
         return {
             "success": True,

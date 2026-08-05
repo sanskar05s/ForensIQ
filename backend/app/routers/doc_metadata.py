@@ -6,6 +6,7 @@ from app.services.doc_metadata.integrity_check import check_integrity
 import tempfile
 import os
 from datetime import datetime, timezone
+from app.services.activity_logger import log_activity
 
 router = APIRouter(
     prefix="/doc",
@@ -101,6 +102,13 @@ async def extract_document(case_id: str, evidence_id: str):
                 "analysis_confidence": confidence,
             }
         ).eq("id", evidence_id).execute()
+
+        log_activity(
+            case_id=case_id,
+            event_type="evidence_analyzed",
+            description=f"Document analysis complete: {char_count} chars via {method}",
+            metadata={"evidence_id": evidence_id, "type": "document", "method": method, "flagged": flagged},
+        )
 
         return {
             "success": True,

@@ -10,6 +10,7 @@ from app.routers.doc_metadata import router as doc_metadata_router
 from app.routers.witness_nlp import router as witness_nlp_router
 from app.routers import contradiction
 from app.routers import timeline_graph
+from app.routers.activity_log import router as activity_log_router
 
 
 app = FastAPI(
@@ -48,6 +49,8 @@ app.include_router(
     timeline_graph.graph_router,
     prefix="/api"
 )
+
+app.include_router(activity_log_router, prefix="/api")
 
 @app.get("/")
 def root():

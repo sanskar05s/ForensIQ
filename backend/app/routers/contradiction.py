@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from app.core.supabase import get_supabase_client
 from app.services.contradiction.rule_based import run_tier1
 from app.services.contradiction.nli_escalation import run_tier2
+from app.services.activity_logger import log_activity
 from datetime import datetime, timezone
 import logging
 
@@ -151,6 +152,13 @@ async def run_contradiction_check(case_id: str):
         .update({"build_state": build_state})\
         .eq("id", case_id)\
         .execute()
+
+    log_activity(
+        case_id=case_id,
+        event_type="contradictions_run",
+        description=f"Contradiction check: {new_count} new contradiction(s) from {len(all_to_compare)} pairs",
+        metadata={"new_contradictions": new_count, "pairs_compared": len(all_to_compare), "statements_processed": len(new_statements)},
+    )
 
     return {
         "success": True,

@@ -5,6 +5,7 @@ from app.services.timeline_graph.graph_builder import build_graph
 from app.services.timeline_graph.sna_metrics import (
     compute_sna_metrics, enrich_nodes_with_sna, get_public_metrics
 )
+from app.services.activity_logger import log_activity
 from datetime import datetime, timezone
 import logging
 
@@ -63,11 +64,21 @@ async def build_case_timeline(case_id: str):
         .eq("id", case_id)\
         .execute()
 
+    confirmed = sum(1 for e in events if e["confidence_state"] == "confirmed")
+    conflicts = sum(1 for e in events if e["confidence_state"] == "low-conflict")
+
+    log_activity(
+        case_id=case_id,
+        event_type="timeline_rebuilt",
+        description=f"Timeline rebuilt: {len(events)} events ({confirmed} confirmed, {conflicts} conflicts)",
+        metadata={"event_count": len(events), "confirmed": confirmed, "conflicts": conflicts},
+    )
+
     return {
         "success": True,
         "event_count": len(events),
-        "confirmed_events": sum(1 for e in events if e["confidence_state"] == "confirmed"),
-        "conflict_events": sum(1 for e in events if e["confidence_state"] == "low-conflict"),
+        "confirmed_events": confirmed,
+        "conflict_events": conflicts,
     }
 
 
@@ -189,6 +200,13 @@ async def build_case_graph(case_id: str):
         .update({"build_state": build_state})\
         .eq("id", case_id)\
         .execute()
+
+    log_activity(
+        case_id=case_id,
+        event_type="graph_rebuilt",
+        description=f"Knowledge graph rebuilt: {len(nodes)} nodes, {len(edges)} edges, {public_sna.get('community_count', 0)} communities",
+        metadata={"node_count": len(nodes), "edge_count": len(edges), "community_count": public_sna.get("community_count", 0)},
+    )
 
     return {
         "success": True,

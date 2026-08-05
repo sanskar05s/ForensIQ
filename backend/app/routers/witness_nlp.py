@@ -5,6 +5,7 @@ from app.core.supabase import get_supabase_client
 from app.services.witness_nlp.ner import extract_entities
 from app.services.witness_nlp.temporal import extract_temporal_sequence
 from app.services.witness_nlp.hedge_detector import detect_hedge_markers
+from app.services.activity_logger import log_activity
 from datetime import datetime, timezone
 
 router = APIRouter(
@@ -103,6 +104,13 @@ async def create_statement(case_id: str, body: WitnessStatementRequest):
 
     statement_id = result.data[0]["id"]
 
+    log_activity(
+        case_id=case_id,
+        event_type="witness_analyzed",
+        description=f"Statement from '{witness_label}' analyzed: {len(entities)} entities, {len(temporal_seq)} temporal events",
+        metadata={"statement_id": statement_id, "witness_label": witness_label, "entity_count": len(entities)},
+    )
+
     return {
         "success": True,
         "statement_id": statement_id,
@@ -161,5 +169,11 @@ async def delete_statement(case_id: str, statement_id: str):
         supabase.rpc(
             "decrement_witness_count", {"case_id_input": case_id}
         ).execute()
+        log_activity(
+            case_id=case_id,
+            event_type="witness_deleted",
+            description=f"Witness statement deleted",
+            metadata={"statement_id": statement_id},
+        )
 
     return {"success": True}
