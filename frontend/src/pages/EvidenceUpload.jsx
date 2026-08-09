@@ -112,6 +112,19 @@ export default function EvidenceUpload() {
     }
   }
 
+  /**
+   * Compute SHA-256 hash of a File using browser Web Crypto API.
+   * Returns a 64-character lowercase hex string.
+   */
+  async function computeSHA256(file) {
+    const buffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
   async function handleUpload() {
     if (!file) return;
 
@@ -120,7 +133,11 @@ export default function EvidenceUpload() {
     setStatusLabel("");
 
     try {
-      // Step 1: Upload to Supabase Storage
+      // Step 1: Compute SHA-256 from original file bytes
+      setStatusLabel("Computing hash...");
+      const fileHash = await computeSHA256(file);
+
+      // Step 2: Upload to Supabase Storage
       setStatusLabel("Uploading...");
       const upload = await uploadEvidence(caseId, file);
 
@@ -128,7 +145,7 @@ export default function EvidenceUpload() {
         throw upload.error;
       }
 
-      // Step 2: Insert evidence record
+      // Step 3: Insert evidence record with file_hash
       setStatusLabel("Saving...");
       const evidence = await createEvidence({
         case_id: caseId,
@@ -138,9 +155,10 @@ export default function EvidenceUpload() {
         file_size: file.size,
         mime_type: file.type,
         status: "uploaded",
+        file_hash: fileHash,
       });
 
-      // Step 3: Trigger analysis based on evidence type (best-effort)
+      // Step 4: Trigger analysis based on evidence type (best-effort)
       const evidenceType = detectType(file);
       if (evidenceType === "image") {
         setStatusLabel("Analyzing image...");
@@ -164,23 +182,21 @@ export default function EvidenceUpload() {
         }
       }
 
-      // Step 4: Blockchain anchoring (best-effort, only if hash available)
-      if (evidence.file_hash) {
-        setStatusLabel("Anchoring to blockchain...");
-        try {
-          await apiClient("/blockchain/write", {
-            method: "POST",
-            body: JSON.stringify({
-              evidence_id: evidence.id,
-              sha256: evidence.file_hash,
-            }),
-          });
-        } catch (e) {
-          // Best-effort — don't block on blockchain failure
-        }
+      // Step 5: Blockchain anchoring (best-effort)
+      setStatusLabel("Anchoring to blockchain...");
+      try {
+        await apiClient("/blockchain/write", {
+          method: "POST",
+          body: JSON.stringify({
+            evidence_id: evidence.id,
+            sha256: fileHash,
+          }),
+        });
+      } catch (e) {
+        // Best-effort — don't block on blockchain failure
       }
 
-      // Step 5: Done
+      // Step 6: Done
       setStatusLabel("Complete ✓");
       setTimeout(() => navigate(`/cases/${caseId}`), 1500);
     } catch (err) {

@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Activity,
   FileText,
+  Shield,
 } from "lucide-react";
 
 import { ROUTES } from "../constants";
@@ -41,6 +42,7 @@ export default function CaseDetail() {
   const [contradictionCount, setContradictionCount] = useState(0);
   const [timelineCount, setTimelineCount] = useState(0);
   const [graphNodeCount, setGraphNodeCount] = useState(0);
+  const [blockchainAudit, setBlockchainAudit] = useState(null);
 
   useEffect(() => {
     if (!caseId) return;
@@ -69,6 +71,9 @@ export default function CaseDetail() {
       .catch(() => {});
     apiClient(`/graph/cases/${caseId}`)
       .then((res) => setGraphNodeCount((res.nodes || []).length))
+      .catch(() => {});
+    apiClient(`/blockchain/cases/${caseId}/audit`)
+      .then((res) => setBlockchainAudit(res.summary || null))
       .catch(() => {});
   }, [caseId]);
 
@@ -235,6 +240,14 @@ export default function CaseDetail() {
           description={`${graphNodeCount} entities`}
           active
           onClick={() => navigate(`/cases/${caseId}/knowledge-graph`)}
+        />
+
+        <ModuleCard
+          icon={<Shield />}
+          title="Evidence Integrity"
+          description={blockchainAudit ? `${blockchainAudit.blockchain_anchored} / ${blockchainAudit.total_evidence} verified` : "Blockchain audit"}
+          active
+          onClick={() => navigate(`/cases/${caseId}/blockchain`)}
         />
 
         <ModuleCard

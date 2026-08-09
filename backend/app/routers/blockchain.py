@@ -34,11 +34,33 @@ def write_hash(request: BlockchainRequest):
             request.evidence_id,
         )
 
+        tx_hash = result.get("tx_hash")
+
+        # Update evidence row with hash + tx
+        supabase = get_supabase_client()
+        ev_result = supabase.table("evidence").update({
+            "file_hash": request.sha256,
+            "blockchain_tx_hash": tx_hash,
+        }).eq("id", request.evidence_id).select("case_id").execute()
+
+        case_id = "unknown"
+        if ev_result.data:
+            case_id = ev_result.data[0].get("case_id", "unknown")
+
         log_activity(
-            case_id="unknown",
+            case_id=case_id,
             event_type="blockchain_anchored",
-            description=f"Evidence hash anchored to Sepolia blockchain",
-            metadata={"evidence_id": request.evidence_id, "sha256": request.sha256},
+            description=(
+                f"Blockchain certificate recorded for evidence "
+                f"(tx: {tx_hash[:10]}...)" if tx_hash
+                else "SHA-256 hash computed — blockchain write pending"
+            ),
+            metadata={
+                "evidence_id": request.evidence_id,
+                "file_hash": request.sha256,
+                "tx_hash": tx_hash,
+                "blockchain_success": result.get("success"),
+            },
         )
 
         return result
@@ -177,3 +199,49 @@ def get_signed_url(case_id: str, evidence_id: str):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/cases/{case_id}/audit")
+async def get_blockchain_audit(case_id: str):
+    """
+    Returns all evidence items for a case with their blockchain status.
+    Used by the frontend Blockchain Audit page.
+    """
+    supabase = get_supabase_client()
+
+    result = supabase.table("evidence")\
+        .select(
+            "id, filename, type, file_hash, blockchain_tx_hash, "
+            "uploaded_at, analyzed_at, status"
+        )\
+        .eq("case_id", case_id)\
+        .order("uploaded_at", desc=False)\
+        .execute()
+
+    evidence_list = result.data or []
+
+    # Build audit summary
+    total = len(evidence_list)
+    hashed = sum(1 for e in evidence_list if e.get("file_hash"))
+    anchored = sum(1 for e in evidence_list if e.get("blockchain_tx_hash"))
+
+    # Classify each evidence item
+    for ev in evidence_list:
+        if ev.get("blockchain_tx_hash"):
+            ev["blockchain_status"] = "VERIFIED"
+        elif ev.get("file_hash"):
+            ev["blockchain_status"] = "HASH_ONLY"
+        else:
+            ev["blockchain_status"] = "PENDING"
+
+    return {
+        "summary": {
+            "total_evidence": total,
+            "hashed": hashed,
+            "blockchain_anchored": anchored,
+            "pending": total - hashed,
+            "completion_percent": round((anchored / total * 100) if total > 0 else 0)
+        },
+        "evidence": evidence_list
+    }
+

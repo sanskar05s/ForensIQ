@@ -128,6 +128,10 @@ export default function EvidenceDetail() {
   const [urlLoading, setUrlLoading] = useState(false);
   const [urlError, setUrlError] = useState(false);
 
+  /* Blockchain verify state */
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState(null);
+
   useEffect(() => {
     fetchEvidence();
   }, [evidenceId]);
@@ -399,6 +403,23 @@ export default function EvidenceDetail() {
     );
   }
 
+
+  async function handleReverify() {
+    setVerifying(true);
+    setVerifyResult(null);
+    try {
+      const res = await apiClient(
+        `/blockchain/cases/${caseId}/evidence/${evidenceId}/verify`
+      );
+      setVerifyResult(res.verified ? "VERIFIED" : "COMPROMISED");
+      setTimeout(() => setVerifyResult(null), 8000);
+    } catch {
+      setVerifyResult("ERROR");
+    } finally {
+      setVerifying(false);
+    }
+  }
+
   function renderBlockchainTab() {
     const hash = evidence.file_hash;
     const txHash = evidence.blockchain_tx_hash;
@@ -480,6 +501,50 @@ export default function EvidenceDetail() {
             </>
           )}
         </div>
+
+        {/* Re-verify button — only when file_hash exists */}
+        {hash && (
+          <div style={{ marginTop: "20px" }}>
+            <button
+              onClick={handleReverify}
+              disabled={verifying}
+              style={{
+                background: "transparent",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                padding: "8px 16px",
+                fontSize: "13px",
+                color: "var(--text-secondary)",
+                cursor: verifying ? "wait" : "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              {verifying ? <Spinner size={14} /> : <Shield size={14} />}
+              {verifying ? "Verifying..." : "Re-verify Integrity"}
+            </button>
+
+            {verifyResult === "VERIFIED" && (
+              <div style={{
+                marginTop: "12px", padding: "10px 14px", borderRadius: "var(--radius-sm)",
+                background: "rgba(22,163,74,0.12)", border: "1px solid var(--success)",
+                color: "var(--success)", fontSize: "13px", display: "flex", alignItems: "center", gap: "6px",
+              }}>
+                <Shield size={14} /> ✓ INTEGRITY VERIFIED — file matches blockchain record
+              </div>
+            )}
+            {verifyResult === "COMPROMISED" && (
+              <div style={{
+                marginTop: "12px", padding: "10px 14px", borderRadius: "var(--radius-sm)",
+                background: "rgba(220,38,38,0.12)", border: "1px solid var(--danger)",
+                color: "var(--danger)", fontSize: "13px", display: "flex", alignItems: "center", gap: "6px",
+              }}>
+                <AlertTriangle size={14} /> ✗ INTEGRITY COMPROMISED — file may have been modified
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }

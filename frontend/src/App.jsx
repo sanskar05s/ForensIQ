@@ -15,6 +15,7 @@ import WitnessStatements from "./pages/WitnessStatements";
 import ContradictionReport from "./pages/ContradictionReport";
 import Timeline from "./pages/Timeline";
 import KnowledgeGraph from "./pages/KnowledgeGraph";
+import BlockchainAudit from "./pages/BlockchainAudit";
 function App() {
   return (
     <BrowserRouter>
@@ -114,6 +115,15 @@ function App() {
           element={
             <ProtectedRoute>
               <KnowledgeGraph />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path={ROUTES.CASE_BLOCKCHAIN}
+          element={
+            <ProtectedRoute>
+              <BlockchainAudit />
             </ProtectedRoute>
           }
         />

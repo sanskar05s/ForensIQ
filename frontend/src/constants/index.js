@@ -16,6 +16,7 @@ export const ROUTES = {
   KNOWLEDGE_GRAPH: "/cases/:caseId/knowledge-graph",
   ACTIVITY: "/cases/:caseId/activity",
   REPORT: "/cases/:caseId/report",
+  CASE_BLOCKCHAIN: "/cases/:caseId/blockchain",
 };
 
 export const TABLES = {
