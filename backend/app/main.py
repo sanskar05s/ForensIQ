@@ -14,6 +14,9 @@ from app.routers.activity_log import router as activity_log_router
 
 from app.routers import assistant, activity_log
 
+from app.routers import report
+
+
 app = FastAPI(
     title="ForensIQ API",
     version="0.1.0",
@@ -54,6 +57,8 @@ app.include_router(
 app.include_router(activity_log_router, prefix="/api")
 app.include_router(assistant.router, prefix="/api")
 app.include_router(activity_log.router, prefix="/api")
+
+app.include_router(report.router, prefix="/api")
 
 @app.get("/")
 def root():

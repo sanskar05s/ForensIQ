@@ -1,0 +1,422 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>ForensIQ Investigation Report</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 2cm;
+      }
+      body {
+        font-family: Arial, sans-serif;
+        font-size: 10pt;
+        color: #1a1a1a;
+        line-height: 1.5;
+      }
+      .header {
+        border-bottom: 2px solid #1d4ed8;
+        padding-bottom: 12px;
+        margin-bottom: 24px;
+      }
+      .header-title {
+        font-size: 22pt;
+        font-weight: bold;
+        color: #1d4ed8;
+        letter-spacing: 1px;
+      }
+      .header-subtitle {
+        font-size: 10pt;
+        color: #666;
+        margin-top: 4px;
+      }
+      .section-title {
+        font-size: 13pt;
+        font-weight: bold;
+        color: #1d4ed8;
+        border-bottom: 1px solid #d1dae9;
+        padding-bottom: 4px;
+        margin-top: 24px;
+        margin-bottom: 12px;
+      }
+      .section-number {
+        color: #8a9ab5;
+        font-size: 10pt;
+        font-weight: normal;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 9pt;
+        margin-bottom: 12px;
+      }
+      th {
+        background-color: #edf1f8;
+        color: #0d1424;
+        text-align: left;
+        padding: 6px 8px;
+        font-weight: bold;
+        border: 1px solid #d1dae9;
+      }
+      td {
+        padding: 5px 8px;
+        border: 1px solid #e8edf7;
+        vertical-align: top;
+      }
+      /* Note: alternating row colors removed — xhtml2pdf does not support :nth-child() */
+      .badge-high {
+        color: #dc2626;
+        font-weight: bold;
+      }
+      .badge-medium {
+        color: #d97706;
+      }
+      .badge-low {
+        color: #059669;
+      }
+      .badge-confirmed {
+        color: #059669;
+        font-weight: bold;
+      }
+      .badge-conflict {
+        color: #d97706;
+      }
+      .badge-verified {
+        color: #059669;
+        font-weight: bold;
+      }
+      .badge-pending {
+        color: #d97706;
+      }
+      .mono {
+        font-family: "Courier New", monospace;
+        font-size: 8pt;
+      }
+      .meta-table td {
+        border: none;
+        padding: 3px 8px;
+      }
+      .meta-label {
+        color: #666;
+        width: 30%;
+      }
+      .claim-box {
+        background-color: #f0f4fa;
+        border-left: 3px solid #1d4ed8;
+        padding: 8px;
+        margin: 4px 0;
+        font-size: 9pt;
+        font-style: italic;
+      }
+      .ai-section {
+        background-color: #edf1f8;
+        border: 1px solid #d1dae9;
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+      .next-steps li {
+        margin-bottom: 8px;
+      }
+      .page-break {
+        page-break-after: always;
+      }
+      .footer-note {
+        margin-top: 32px;
+        border-top: 1px solid #d1dae9;
+        padding-top: 8px;
+        font-size: 8pt;
+        color: #8a9ab5;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- HEADER -->
+    <div class="header">
+      <div class="header-title">ForensIQ</div>
+      <div class="header-subtitle">
+        DIGITAL EVIDENCE INTELLIGENCE REPORT &nbsp;|&nbsp; Generated: {{
+        generated_at }} &nbsp;|&nbsp; CONFIDENTIAL — INVESTIGATOR USE ONLY
+      </div>
+    </div>
+
+    <!-- SECTION 1: EXECUTIVE SUMMARY -->
+    <div class="section-title">
+      <span class="section-number">01 &nbsp;</span>Executive Summary
+    </div>
+    <div class="ai-section">
+      {{ executive_summary | replace('\n', '<br />') }}
+    </div>
+    <div class="page-break"></div>
+
+    <!-- SECTION 2: INVESTIGATION SUMMARY -->
+    <div class="section-title">
+      <span class="section-number">02 &nbsp;</span>Investigation Summary
+    </div>
+    <table class="meta-table">
+      <tr>
+        <td class="meta-label">Case Title</td>
+        <td>{{ case.title }}</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Case ID</td>
+        <td class="mono">{{ case.case_id or "—" }}</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Investigator</td>
+        <td>{{ case.investigator_name }}</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Status</td>
+        <td>{{ case.status }}</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Priority</td>
+        <td>{{ case.priority }}</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Created</td>
+        <td>{{ case.created_at }}</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Evidence Items</td>
+        <td>{{ total_evidence }}</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Witness Statements</td>
+        <td>{{ total_statements }}</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Contradictions Detected</td>
+        <td>{{ total_contradictions }}</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Timeline Events</td>
+        <td>{{ total_events }}</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Blockchain Verified</td>
+        <td>{{ verified_count }} / {{ total_evidence }}</td>
+      </tr>
+    </table>
+
+    <!-- SECTION 3: EVIDENCE SUMMARY -->
+    <div class="section-title">
+      <span class="section-number">03 &nbsp;</span>Evidence Summary
+    </div>
+    {% if evidence_list %}
+    <table>
+      <tr>
+        <th>#</th>
+        <th>Filename</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Confidence</th>
+        <th>Key Finding</th>
+      </tr>
+      {% for ev in evidence_list %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ ev.filename[:40] }}</td>
+        <td>{{ ev.type | upper }}</td>
+        <td>{{ ev.status | upper }}</td>
+        <td class="mono">
+          {% if ev.analysis_confidence %}{{ (ev.analysis_confidence * 100) |
+          round(0) | int }}%{% else %}—{% endif %}
+        </td>
+        <td>{{ (ev.xai_summary or "—")[:100] }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p>No evidence uploaded for this case.</p>
+    {% endif %}
+    <div class="page-break"></div>
+
+    <!-- SECTION 4: WITNESS STATEMENTS SUMMARY -->
+    <div class="section-title">
+      <span class="section-number">04 &nbsp;</span>Witness Statements Summary
+    </div>
+    {% if statements %}
+    <table>
+      <tr>
+        <th>Witness</th>
+        <th>Entities Found</th>
+        <th>Temporal Events</th>
+        <th>Uncertainty Markers</th>
+        <th>Statement Excerpt</th>
+      </tr>
+      {% for stmt in statements %}
+      <tr>
+        <td>{{ stmt.witness_label }}</td>
+        <td>{{ (stmt.entities or []) | length }}</td>
+        <td>{{ (stmt.temporal_sequence or []) | length }}</td>
+        <td>
+          {% if stmt.hedge_marker_count >= 3 %}
+          <span class="badge-high">HIGH ({{ stmt.hedge_marker_count }})</span>
+          {% elif stmt.hedge_marker_count > 0 %}
+          <span class="badge-medium">{{ stmt.hedge_marker_count }}</span>
+          {% else %}
+          <span class="badge-low">None</span>
+          {% endif %}
+        </td>
+        <td>
+          {{ stmt.raw_text[:120] }}{% if stmt.raw_text | length > 120 %}...{%
+          endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p>No witness statements recorded for this case.</p>
+    {% endif %}
+
+    <!-- SECTION 5: CONTRADICTION SUMMARY -->
+    <div class="section-title">
+      <span class="section-number">05 &nbsp;</span>Contradiction Summary
+    </div>
+    {% if contradictions %} {% for c in contradictions %}
+    <table>
+      <tr>
+        <th colspan="2">
+          Contradiction {{ loop.index }}: {{ c.type | upper }} | {% if
+          c.severity == 'HIGH' %}<span class="badge-high">HIGH SEVERITY</span>
+          {% elif c.severity == 'MEDIUM' %}<span class="badge-medium"
+            >MEDIUM SEVERITY</span
+          >
+          {% else %}<span class="badge-low">LOW SEVERITY</span>{% endif %} |
+          Tier {{ c.tier }} {% if c.nli_confidence %} | NLI Confidence: {{
+          (c.nli_confidence * 100) | round(0) | int }}%{% endif %}
+        </th>
+      </tr>
+      <tr>
+        <td width="50%">
+          <strong
+            >{{ c.witness_a.witness_label if c.witness_a else "Witness A" }}
+            states:</strong
+          ><br />
+          <div class="claim-box">{{ c.claim_a }}</div>
+        </td>
+        <td width="50%">
+          <strong
+            >{{ c.witness_b.witness_label if c.witness_b else "Witness B" }}
+            states:</strong
+          ><br />
+          <div class="claim-box">{{ c.claim_b }}</div>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2"><em>{{ c.xai_explanation }}</em></td>
+      </tr>
+    </table>
+    {% endfor %} {% else %}
+    <p>
+      No contradictions detected. Run the contradiction check after adding
+      witness statements.
+    </p>
+    {% endif %}
+    <div class="page-break"></div>
+
+    <!-- SECTION 6: TIMELINE SUMMARY -->
+    <div class="section-title">
+      <span class="section-number">06 &nbsp;</span>Timeline Summary
+    </div>
+    {% if timeline_events %}
+    <table>
+      <tr>
+        <th>#</th>
+        <th>Description</th>
+        <th>Source</th>
+        <th>Timestamp / Order</th>
+        <th>Confidence</th>
+      </tr>
+      {% for ev in timeline_events %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ ev.description[:150] }}</td>
+        <td>{{ ev.source | replace('-', ' ') | upper }}</td>
+        <td class="mono">
+          {% if ev.timestamp_hard %}{{ ev.timestamp_hard }} {% else %}Relative
+          #{{ ev.relative_order }}{% endif %}
+        </td>
+        <td>
+          {% if ev.confidence_state == 'confirmed' %}
+          <span class="badge-confirmed">CONFIRMED</span>
+          {% elif ev.confidence_state == 'low-conflict' %}
+          <span class="badge-conflict">⚠ CONFLICT</span>
+          {% else %}HIGH{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p>
+      Timeline not yet built. Build the timeline after adding evidence and
+      witness statements.
+    </p>
+    {% endif %}
+
+    <!-- SECTION 7: BLOCKCHAIN VERIFICATION -->
+    <div class="section-title">
+      <span class="section-number">07 &nbsp;</span>Blockchain Verification
+    </div>
+    {% if blockchain_data %}
+    <table>
+      <tr>
+        <th>Evidence File</th>
+        <th>SHA-256 Hash</th>
+        <th>Sepolia Transaction</th>
+        <th>Status</th>
+      </tr>
+      {% for ev in blockchain_data %}
+      <tr>
+        <td>{{ ev.filename[:35] }}</td>
+        <td class="mono">
+          {% if ev.file_hash %}{{ ev.file_hash[:20] }}...{% else %}Pending{%
+          endif %}
+        </td>
+        <td class="mono">
+          {% if ev.blockchain_tx_hash %}{{ ev.blockchain_tx_hash[:18] }}...{%
+          else %}Pending{% endif %}
+        </td>
+        <td>
+          {% if ev.blockchain_tx_hash %}
+          <span class="badge-verified">✓ VERIFIED</span>
+          {% else %}
+          <span class="badge-pending">⏳ PENDING</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p>No evidence uploaded yet.</p>
+    {% endif %}
+    <div class="page-break"></div>
+
+    <!-- SECTION 8: AI-GENERATED SUGGESTED NEXT STEPS -->
+    <div class="section-title">
+      <span class="section-number">08 &nbsp;</span>AI-Generated Suggested Next
+      Steps
+    </div>
+    <div class="ai-section">
+      <ul class="next-steps">
+        {% for step in ai_next_steps_list %}
+        <li>{{ step }}</li>
+        {% else %}
+        <li>
+          AI-generated suggestions unavailable. Please review contradictions and
+          timeline manually.
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer-note">
+      Generated by ForensIQ | Academic Research Project | {{ generated_at }} |
+      This report is system-generated and requires investigator verification. No
+      legal conclusions are implied.
+    </div>
+  </body>
+</html>
