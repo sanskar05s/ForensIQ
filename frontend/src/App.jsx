@@ -16,6 +16,8 @@ import ContradictionReport from "./pages/ContradictionReport";
 import Timeline from "./pages/Timeline";
 import KnowledgeGraph from "./pages/KnowledgeGraph";
 import BlockchainAudit from "./pages/BlockchainAudit";
+import ActivityLog from "./pages/ActivityLog";
+import CaseExport from "./pages/CaseExport";
 function App() {
   return (
     <BrowserRouter>
@@ -132,7 +134,7 @@ function App() {
           path={ROUTES.ACTIVITY}
           element={
             <ProtectedRoute>
-              <Placeholder title="Activity Log" />
+              <ActivityLog />
             </ProtectedRoute>
           }
         />
@@ -141,7 +143,7 @@ function App() {
           path={ROUTES.REPORT}
           element={
             <ProtectedRoute>
-              <Placeholder title="Report" />
+              <CaseExport />
             </ProtectedRoute>
           }
         />

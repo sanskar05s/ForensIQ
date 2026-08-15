@@ -36,8 +36,8 @@ async def get_report(case_id: str):
     """Returns current report status and metadata."""
     supabase = get_supabase_client()
     result = supabase.table("reports").select("*")\
-        .eq("case_id", case_id).single().execute()
-    if not result.data:
+        .eq("case_id", case_id).maybe_single().execute()
+    if not result or not result.data:
         return {"report": None, "message": "No report generated yet"}
     return {"report": result.data}
 
@@ -47,7 +47,7 @@ async def download_report(case_id: str):
     """Returns a signed download URL for the report PDF (1 hour expiry)."""
     supabase = get_supabase_client()
     result = supabase.table("reports").select("storage_path, status")\
-        .eq("case_id", case_id).single().execute().data
+        .eq("case_id", case_id).maybe_single().execute().data
 
     if not result or result.get("status") != "ready":
         raise HTTPException(
