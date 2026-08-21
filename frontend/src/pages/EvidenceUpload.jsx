@@ -10,6 +10,7 @@ import Spinner from "../components/loading/Spinner";
 import { uploadEvidence } from "../supabase/storage";
 import { createEvidence } from "../supabase/db";
 import { apiClient } from "../api/client";
+import { useEvidence } from "../hooks/useEvidence";
 
 import { parseSupabaseError } from "../utils/supabaseErrors";
 
@@ -24,6 +25,8 @@ export default function EvidenceUpload() {
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [statusLabel, setStatusLabel] = useState("");
+
+  const { evidence } = useEvidence(caseId);
 
   function detectType(file) {
     if (!file) return "";
@@ -127,6 +130,19 @@ export default function EvidenceUpload() {
 
   async function handleUpload() {
     if (!file) return;
+
+    // Check for duplicate filename in existing evidence
+    const isDuplicate = evidence && evidence.some(
+      (e) => e.filename.toLowerCase() === file.name.toLowerCase()
+    );
+    if (isDuplicate) {
+      const confirmed = window.confirm(
+        `A file named "${file.name}" already exists in this case.\n\n` +
+        `Uploading again will create a duplicate entry.\n\n` +
+        `Click OK to upload anyway, or Cancel to choose a different file.`
+      );
+      if (!confirmed) return;
+    }
 
     setUploading(true);
     setError("");

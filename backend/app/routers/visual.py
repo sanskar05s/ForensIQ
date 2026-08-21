@@ -68,6 +68,8 @@ def analyze_image(case_id: str, evidence_id: str):
 
         # Write to temp file with correct extension
         suffix = Path(evidence["filename"]).suffix or ".jpg"
+        if suffix.lower() in (".jfif", ".jpe"):
+            suffix = ".jpg"  # JFIF is JPEG — rename for library compatibility
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(file_bytes)
             temp_path = tmp.name

@@ -279,9 +279,38 @@ export default function CaseDetail() {
           <ModuleCard
             icon={<Image />}
             title="Evidence"
-            description="Upload and manage evidence."
+            description={
+              <span>
+                Upload and manage evidence.
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/cases/${caseId}/evidence/new`);
+                  }}
+                  style={{
+                    display: "block",
+                    fontSize: 11,
+                    marginTop: 4,
+                    color: "var(--accent)",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                >
+                  + Upload Evidence
+                </button>
+              </span>
+            }
             active
-            onClick={() => navigate(`/cases/${caseId}/evidence/new`)}
+            onClick={() => {
+              const section = document.getElementById("evidence-section");
+              if (section) {
+                section.scrollIntoView({ behavior: "smooth" });
+              } else {
+                navigate(`/cases/${caseId}/evidence/new`);
+              }
+            }}
           />
 
           <ModuleCard
@@ -358,6 +387,7 @@ export default function CaseDetail() {
         </div>
 
         {/* Evidence Section */}
+        <div id="evidence-section">
         <h2 style={{ marginBottom: "20px" }}>Evidence</h2>
 
         {evidenceLoading ? (
@@ -415,6 +445,7 @@ export default function CaseDetail() {
             ))}
           </div>
         )}
+        </div>
       </div>
 
       {/* AI Assistant Panel */}

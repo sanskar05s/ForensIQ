@@ -7,6 +7,9 @@ from app.services.witness_nlp.temporal import extract_temporal_sequence
 from app.services.witness_nlp.hedge_detector import detect_hedge_markers
 from app.services.activity_logger import log_activity
 from datetime import datetime, timezone
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/witness",
@@ -110,6 +113,91 @@ async def create_statement(case_id: str, body: WitnessStatementRequest):
         description=f"Statement from '{witness_label}' analyzed: {len(entities)} entities, {len(temporal_seq)} temporal events",
         metadata={"statement_id": statement_id, "witness_label": witness_label, "entity_count": len(entities)},
     )
+
+    # Auto-trigger incremental contradiction check (non-fatal)
+    try:
+        from app.services.contradiction.rule_based import run_tier1
+        from app.services.contradiction.nli_escalation import run_tier2
+        from app.services.contradiction.candidate_filter import should_compare_nli
+
+        supabase_client = get_supabase_client()
+        case = supabase_client.table("cases")\
+            .select("build_state").eq("id", case_id).execute()
+        build_state = ((case.data[0] if case.data else {}).get("build_state") or {})
+
+        all_statements = supabase_client.table("witness_statements")\
+            .select("*").eq("case_id", case_id)\
+            .eq("analysis_status", "analyzed").execute().data or []
+
+        new_stmt = next((s for s in all_statements if s["id"] == statement_id), None)
+        existing = [s for s in all_statements if s["id"] != statement_id]
+
+        new_contradictions = []
+        for existing_stmt in existing:
+            if new_stmt and existing_stmt["id"] != new_stmt["id"]:
+                tier1 = run_tier1(new_stmt, existing_stmt)
+                if tier1:
+                    for c in tier1:
+                        c["case_id"] = case_id
+                    new_contradictions.extend(tier1)
+                elif should_compare_nli(new_stmt, existing_stmt):
+                    try:
+                        tier2 = run_tier2(new_stmt, existing_stmt)
+                        for c in tier2:
+                            c["case_id"] = case_id
+                        new_contradictions.extend(tier2)
+                    except Exception:
+                        pass
+
+        # Deduplicate before inserting
+        existing_fingerprints = set()
+        existing_c = supabase_client.table("contradictions")\
+            .select("witness_a_id, witness_b_id, type")\
+            .eq("case_id", case_id).execute().data or []
+        for row in existing_c:
+            existing_fingerprints.add((
+                min(row["witness_a_id"], row["witness_b_id"]),
+                max(row["witness_a_id"], row["witness_b_id"]),
+                row["type"]
+            ))
+
+        for c in new_contradictions:
+            fp = (
+                min(c.get("witness_a_id", ""), c.get("witness_b_id", "")),
+                max(c.get("witness_a_id", ""), c.get("witness_b_id", "")),
+                c.get("type", "")
+            )
+            if fp not in existing_fingerprints:
+                supabase_client.table("contradictions").insert(c).execute()
+                existing_fingerprints.add(fp)
+
+        build_state["last_contradiction_run"] = datetime.now(timezone.utc).isoformat()
+        supabase_client.table("cases").update({"build_state": build_state})\
+            .eq("id", case_id).execute()
+
+    except Exception as e:
+        logger.warning(f"Auto contradiction check failed (non-fatal): {e}")
+
+    # Auto-trigger knowledge graph rebuild (non-fatal)
+    try:
+        from app.services.timeline_graph.graph_builder import build_graph
+        from app.services.timeline_graph.sna_metrics import (
+            compute_sna_metrics, enrich_nodes_with_sna, get_public_metrics
+        )
+        supabase_client = get_supabase_client()
+        G, nodes, edges = build_graph(case_id, supabase_client)
+        if nodes:
+            sna = compute_sna_metrics(G)
+            nodes = enrich_nodes_with_sna(nodes, sna)
+            public_sna = get_public_metrics(sna, node_count=len(nodes), edge_count=len(edges))
+            supabase_client.table("knowledge_graphs").upsert({
+                "case_id": case_id,
+                "nodes": nodes,
+                "edges": edges,
+                "sna_metrics": public_sna,
+            }, on_conflict="case_id").execute()
+    except Exception as e:
+        logger.warning(f"Auto graph rebuild failed (non-fatal): {e}")
 
     return {
         "success": True,

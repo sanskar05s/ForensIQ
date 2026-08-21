@@ -497,21 +497,34 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
 
             # Resolve explicit time
             explicit_dt: Optional[datetime] = None
+            had_full_datetime = False
             if abs_str:
                 explicit_dt = _parse_full(abs_str)
-                if not explicit_dt:
+                if explicit_dt:
+                    had_full_datetime = True
+                else:
                     t = _parse_time(abs_str)
                     if t and case_date:
-                        explicit_dt = datetime.combine(case_date, t)
+                        # Bug 4: midnight → end of day, not start
+                        if 'midnight' in (abs_str or '').lower():
+                            explicit_dt = datetime.combine(case_date, datetime.strptime("23:59:59", "%H:%M:%S").time())
+                        else:
+                            explicit_dt = datetime.combine(case_date, t)
 
             if not explicit_dt:
                 for m in _TIME_IN_TEXT.finditer(raw):
                     t = _parse_time(m.group(0))
                     if t and case_date:
-                        explicit_dt = datetime.combine(case_date, t)
+                        if 'midnight' in raw.lower():
+                            explicit_dt = datetime.combine(case_date, datetime.strptime("23:59:59", "%H:%M:%S").time())
+                        else:
+                            explicit_dt = datetime.combine(case_date, t)
                         break
 
-            ts_hard = explicit_dt.isoformat() if explicit_dt else None
+            # Bug 5: only set timestamp_hard for full datetime sources
+            # Time-only inferred from "9 PM" + case_date → no hard timestamp
+            # (prevents wrong date display due to timezone shift)
+            ts_hard = explicit_dt.isoformat() if (explicit_dt and had_full_datetime) else None
             rel, off = _temporal_relation(raw)
             ref_raw = _reference_label(raw)
 

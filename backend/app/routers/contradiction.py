@@ -185,7 +185,20 @@ async def list_contradictions(case_id: str):
         .eq("case_id", case_id)\
         .order("created_at", desc=True)\
         .execute()
-    return {"contradictions": result.data or []}
+
+    # Deduplicate A↔B vs B↔A pairs
+    seen = set()
+    unique = []
+    for c in (result.data or []):
+        key = (
+            min(c["witness_a_id"], c["witness_b_id"]),
+            max(c["witness_a_id"], c["witness_b_id"]),
+            c["type"]
+        )
+        if key not in seen:
+            seen.add(key)
+            unique.append(c)
+    return {"contradictions": unique}
 
 
 @router.get("/contradiction/cases/{case_id}/staleness")

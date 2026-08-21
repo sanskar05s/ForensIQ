@@ -75,6 +75,9 @@ def check_time_contradiction(claims_a: List[Dict],
             hour_b = normalize_time_value(cb["extracted_value"])
             if hour_a is not None and hour_b is not None:
                 diff = abs(hour_a - hour_b)
+                # Handle overnight wrap: 9 PM vs midnight = 3 hours, not 21
+                if diff > 12:
+                    diff = 24 - diff
                 if diff > 1:  # more than 1 hour difference
                     severity = "HIGH" if diff > 3 else "MEDIUM"
                     return {

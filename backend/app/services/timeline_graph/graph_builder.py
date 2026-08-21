@@ -82,12 +82,15 @@ def build_graph(case_id: str, supabase) -> Tuple[nx.Graph, list, list]:
         .execute().data or []
 
     for ev in image_evidence:
-        detections = ev.get("object_detections") or []
+        detections = ev.get("object_detections")
+        if not detections or not isinstance(detections, list):
+            continue
         detected_ids = []
 
         for det in detections:
             label = (det.get("label") or "").strip()
-            if not label:
+            confidence = det.get("confidence", 0)
+            if not label or confidence < 0.70:
                 continue
 
             node_id = make_node_id(label, "OBJECT")
