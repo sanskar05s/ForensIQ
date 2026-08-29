@@ -69,6 +69,15 @@ def extract_from_docx(file_path: str) -> dict:
     Extracts text from DOCX using python-docx.
     Returns {text, method, paragraph_count, char_count}
     """
+    import os
+    suffix = os.path.splitext(file_path)[1].lower()
+    if suffix == '.doc':
+        return {
+            "text": "",
+            "method": "unsupported_format",
+            "char_count": 0,
+            "error": "Old .doc format not supported. Please convert to .docx."
+        }
     doc = Document(file_path)
     paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
     full_text = "\n".join(paragraphs)

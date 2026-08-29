@@ -121,6 +121,20 @@ export default function WitnessStatements() {
     e.preventDefault();
     setFormError("");
     setSuccessMsg("");
+
+    if (!witnessLabel.trim()) {
+      setFormError("Witness label is required.");
+      return;
+    }
+    if (!rawText.trim()) {
+      setFormError("Statement text cannot be empty.");
+      return;
+    }
+    if (rawText.trim().length < 10) {
+      setFormError("Statement is too short to analyze.");
+      return;
+    }
+
     setSubmitting(true);
 
     try {

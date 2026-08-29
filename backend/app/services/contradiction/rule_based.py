@@ -15,7 +15,7 @@ OPPOSITE_DIRECTIONS = {
 
 # Time normalization map
 TIME_NORMALIZATION = {
-    'midnight': 0,
+    'midnight': 23.99,
     'morning': 9,
     'noon': 12,
     'afternoon': 14,
@@ -38,6 +38,12 @@ def normalize_time_value(time_str: str) -> Optional[int]:
     for key, hour in TIME_NORMALIZATION.items():
         if key in lower:
             return hour
+
+    # Guard: skip ambiguous times without AM/PM or 24h format
+    has_ampm = 'am' in lower or 'pm' in lower
+    has_24h = bool(re.search(r'\b([01]?\d|2[0-3]):(\d{2})\b', lower))
+    if not has_ampm and not has_24h:
+        return None  # Ambiguous — skip to avoid false positives
 
     # Parse HH:MM or HH am/pm formats
     match_colon = re.search(r'(\d{1,2}):(\d{2})\s*(am|pm)?', lower)

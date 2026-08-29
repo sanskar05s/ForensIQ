@@ -5,6 +5,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+GRAPH_ENTITY_TYPES = {"PERSON", "LOCATION", "OBJECT", "ORGANIZATION", "EVENT"}
+
 
 def make_node_id(text: str, entity_type: str) -> str:
     """Creates a clean string node ID from entity text and type."""
@@ -39,6 +41,8 @@ def build_graph(case_id: str, supabase) -> Tuple[nx.Graph, list, list]:
         stmt_node_ids = []
 
         for entity in entities:
+            if entity.get("type") not in GRAPH_ENTITY_TYPES:
+                continue  # Skip TIME, NUMBER, and other non-investigation types
             node_id = make_node_id(entity["text"], entity["type"])
 
             if node_id not in entity_data:

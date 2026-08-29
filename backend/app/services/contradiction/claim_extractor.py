@@ -3,7 +3,7 @@ from typing import List, Dict, Optional
 # Matches sentences where the witness describes their own static position.
 # "I was inside", "I was outside", "we were inside", "I stood inside"
 _SELF_LOCATION_RE = re.compile(
-    r'\b(i|we)\s+(?:was|were|am|are|stood|sit|sat|remained|stayed)\b',
+    r'\b(i|we)\s+(?:was|were|am|are|stood|remained|stayed)\b',
     re.IGNORECASE
 )
 # ── Semantic number classification ────────────────────────────────────────────
@@ -109,7 +109,8 @@ DIRECTION_WORDS = [
     'north', 'south', 'east', 'west',
     'left', 'right', 'up', 'down',
     'towards', 'away from', 'forward', 'backward',
-    'upstairs', 'downstairs', 'outside', 'inside'
+    'upstairs', 'downstairs', 'outside', 'inside',
+    'away',
 ]
 
 NUMBER_WORDS = {

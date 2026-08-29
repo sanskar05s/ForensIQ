@@ -18,8 +18,8 @@ import { apiClient } from "../api/client";
 /* ─── Tab definitions per evidence type ─── */
 
 const TABS_BY_TYPE = {
-  image: ["Objects", "OCR", "Scene", "XAI", "Blockchain"],
-  document: ["Extracted Text", "Metadata", "Blockchain"],
+  image: ["Preview", "Objects", "OCR", "Scene", "XAI", "Blockchain"],
+  document: ["Extracted Text", "Preview", "Metadata", "Blockchain"],
   video: ["Preview", "Metadata", "Blockchain"],
   audio: ["Preview", "Metadata", "Blockchain"],
 };
@@ -603,6 +603,42 @@ export default function EvidenceDetail() {
       return <audio controls src={signedUrl} style={{ width: "100%" }} />;
     }
 
+    if (evidence.type === "image") {
+      return (
+        <img
+          src={signedUrl}
+          alt={evidence.filename}
+          style={{
+            maxWidth: "100%",
+            borderRadius: "8px",
+            border: "1px solid var(--border)",
+          }}
+        />
+      );
+    }
+
+    if (evidence.type === "document") {
+      const isPdf =
+        (evidence.mime_type || "").includes("pdf") ||
+        (evidence.filename || "").toLowerCase().endsWith(".pdf");
+      if (isPdf) {
+        return (
+          <iframe
+            src={signedUrl}
+            width="100%"
+            height="600px"
+            style={{ border: "none", borderRadius: "8px" }}
+            title="PDF Preview"
+          />
+        );
+      }
+      return (
+        <p style={{ color: "var(--text-muted)", padding: "16px" }}>
+          Preview not available for this document type. Use the Extracted Text tab.
+        </p>
+      );
+    }
+
     return null;
   }
 
@@ -679,6 +715,14 @@ export default function EvidenceDetail() {
   }
 
   function renderExtractedTextTab() {
+    if (evidence.xai_summary && evidence.xai_summary.includes('unsupported_format')) {
+      return (
+        <div style={{color:'var(--warning)', padding:16}}>
+          ⚠ Old .doc format is not supported.
+          Please convert this file to .docx and re-upload.
+        </div>
+      );
+    }
     if (!evidence.extracted_text) {
       return <p style={emptyStyle}>No text extracted from this document.</p>;
     }
