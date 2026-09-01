@@ -14,6 +14,8 @@ import {
   Shield,
   CheckCircle,
   Circle,
+  AlertCircle,
+  FlaskConical,
 } from "lucide-react";
 
 import { ROUTES } from "../constants";
@@ -383,6 +385,22 @@ export default function CaseDetail() {
             }
             active
             onClick={() => navigate(`/cases/${caseId}/report`)}
+          />
+
+          <ModuleCard
+            icon={<AlertCircle />}
+            title="Investigation Leads"
+            description="AI-identified evidence gaps"
+            active
+            onClick={() => navigate(`/cases/${caseId}/leads`)}
+          />
+
+          <ModuleCard
+            icon={<FlaskConical />}
+            title="Hypothesis Analyzer"
+            description="Test theories against evidence"
+            active
+            onClick={() => navigate(`/cases/${caseId}/hypotheses`)}
           />
         </div>
 

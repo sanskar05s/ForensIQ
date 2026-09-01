@@ -18,6 +18,8 @@ import KnowledgeGraph from "./pages/KnowledgeGraph";
 import BlockchainAudit from "./pages/BlockchainAudit";
 import ActivityLog from "./pages/ActivityLog";
 import CaseExport from "./pages/CaseExport";
+import LeadGenerator from "./pages/LeadGenerator";
+import HypothesisAnalyzer from "./pages/HypothesisAnalyzer";
 function App() {
   return (
     <BrowserRouter>
@@ -147,6 +149,25 @@ function App() {
             </ProtectedRoute>
           }
         />
+
+        <Route
+          path={ROUTES.CASE_LEADS}
+          element={
+            <ProtectedRoute>
+              <LeadGenerator />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path={ROUTES.CASE_HYPOTHESES}
+          element={
+            <ProtectedRoute>
+              <HypothesisAnalyzer />
+            </ProtectedRoute>
+          }
+        />
+
         {/* Default Route */}
         <Route path="*" element={<Navigate to={ROUTES.CASES} replace />} />
       </Routes>

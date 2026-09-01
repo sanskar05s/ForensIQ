@@ -8,6 +8,8 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from app.core.supabase import get_supabase_client
 from app.services.blockchain.sha256_hasher import hash_file
 from app.services.activity_logger import log_activity
+from app.services.evidence_scorer import compute_priority_score
+
 
 router = APIRouter(
     prefix="/evidence",
@@ -79,7 +81,11 @@ async def upload_evidence(
             case_id=case_id,
             event_type="evidence_uploaded",
             description=f"Evidence '{file.filename}' uploaded ({type})",
-            metadata={"evidence_id": evidence["id"], "type": type, "filename": file.filename},
+            metadata={
+                "evidence_id": evidence["id"],
+                "type": type,
+                "filename": file.filename
+            },
         )
 
         return {
@@ -95,3 +101,74 @@ async def upload_evidence(
     finally:
         if temp_path and Path(temp_path).exists():
             Path(temp_path).unlink()
+
+
+@router.get("/cases/{case_id}")
+async def list_evidence(case_id: str):
+    """
+    List all evidence for a case with priority scoring.
+    """
+
+    supabase = get_supabase_client()
+
+    try:
+        result = (
+            supabase.table("evidence")
+            .select("*")
+            .eq("case_id", case_id)
+            .order("uploaded_at", desc=True)
+            .execute()
+        )
+
+        evidence_list = result.data or []
+
+        # Fetch data needed for scoring
+        case_contradictions = (
+            supabase.table("contradictions")
+            .select("claim_a, claim_b")
+            .eq("case_id", case_id)
+            .execute()
+            .data
+            or []
+        )
+
+        # Knowledge graph may not exist yet, so do not use .single()
+        kg_result = (
+            supabase.table("knowledge_graphs")
+            .select("nodes")
+            .eq("case_id", case_id)
+            .execute()
+        )
+
+        kg_nodes = (
+            (kg_result.data[0].get("nodes") or [])
+            if kg_result.data
+            else []
+        )
+
+        # Add priority to each evidence item
+        # A scoring failure should not break the entire evidence list.
+        for ev in evidence_list:
+            try:
+                priority_data = compute_priority_score(
+                    ev,
+                    case_contradictions,
+                    kg_nodes
+                )
+
+                ev["priority_score"] = priority_data["score"]
+                ev["priority"] = priority_data["priority"]
+                ev["priority_breakdown"] = priority_data["breakdown"]
+
+            except Exception:
+                ev["priority_score"] = 0
+                ev["priority"] = "LOW"
+                ev["priority_breakdown"] = {}
+
+        return {
+            "success": True,
+            "evidence": evidence_list
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

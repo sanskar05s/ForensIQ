@@ -150,6 +150,41 @@ export default function EvidenceCard({ evidence, onClick }) {
             {evidence.extracted_text.length} chars extracted
           </p>
         )}
+
+      {evidence.priority_score > 0 && (
+        <div style={{ marginTop: "8px" }}>
+          <span
+            style={{
+              padding: "3px 10px",
+              borderRadius: "999px",
+              fontSize: "10px",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              color: "#fff",
+              background:
+                evidence.priority === "critical"
+                  ? "var(--critical)"
+                  : evidence.priority === "high"
+                  ? "var(--warning)"
+                  : evidence.priority === "medium"
+                  ? "var(--info)"
+                  : "var(--text-muted)",
+            }}
+          >
+            {evidence.priority}
+          </span>
+          <p
+            style={{
+              marginTop: "4px",
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: "10px",
+              color: "var(--text-muted)",
+            }}
+          >
+            Priority: {evidence.priority_score}/100
+          </p>
+        </div>
+      )}
     </div>
   );
 }

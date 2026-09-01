@@ -8,20 +8,27 @@ import {
   ChevronDown,
   ChevronRight,
   ArrowLeft,
+  Upload,
+  Hash,
+  Cpu,
+  GitMerge,
+  Share2,
+  Link,
 } from "lucide-react";
 
 import AppShell from "../components/layout/AppShell";
 import Spinner from "../components/loading/Spinner";
 import { supabase } from "../supabase/client";
 import { apiClient } from "../api/client";
+import { relativeTime } from "../utils/relativeTime";
 
 /* ─── Tab definitions per evidence type ─── */
 
 const TABS_BY_TYPE = {
-  image: ["Preview", "Objects", "OCR", "Scene", "XAI", "Blockchain"],
-  document: ["Extracted Text", "Preview", "Metadata", "Blockchain"],
-  video: ["Preview", "Metadata", "Blockchain"],
-  audio: ["Preview", "Metadata", "Blockchain"],
+  image: ["Preview", "Objects", "OCR", "Scene", "XAI", "Blockchain", "Journey", "Linked Claims"],
+  document: ["Extracted Text", "Preview", "Metadata", "Blockchain", "Journey", "Linked Claims"],
+  video: ["Preview", "Metadata", "Blockchain", "Journey", "Linked Claims"],
+  audio: ["Preview", "Metadata", "Blockchain", "Journey", "Linked Claims"],
 };
 
 /* ─── Confidence pill helper ─── */
@@ -128,6 +135,15 @@ export default function EvidenceDetail() {
   const [urlLoading, setUrlLoading] = useState(false);
   const [urlError, setUrlError] = useState(false);
 
+  /* Journey tab state */
+  const [journey, setJourney] = useState(null);
+  const [journeyLoading, setJourneyLoading] = useState(false);
+
+  /* Linked Claims tab state */
+  const [claimLinks, setClaimLinks] = useState(null);
+  const [claimsLoading, setClaimsLoading] = useState(false);
+  const [buildingClaims, setBuildingClaims] = useState(false);
+
   /* Blockchain verify state */
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState(null);
@@ -173,11 +189,56 @@ export default function EvidenceDetail() {
     }
   }
 
+  async function fetchJourney() {
+    setJourneyLoading(true);
+    try {
+      const res = await apiClient(
+        `/provenance/cases/${caseId}/evidence/${evidenceId}`
+      );
+      setJourney(res);
+    } catch {
+      setJourney({ steps: [] });
+    } finally {
+      setJourneyLoading(false);
+    }
+  }
+
+  async function fetchClaimLinks() {
+    setClaimsLoading(true);
+    try {
+      const res = await apiClient(
+        `/claims/cases/${caseId}/evidence/${evidenceId}`
+      );
+      setClaimLinks(res);
+    } catch {
+      setClaimLinks({ links: [] });
+    } finally {
+      setClaimsLoading(false);
+    }
+  }
+
+  async function handleBuildClaims() {
+    setBuildingClaims(true);
+    try {
+      await apiClient(`/claims/cases/${caseId}/build`, { method: "POST" });
+      await fetchClaimLinks();
+    } catch {
+      // silent
+    } finally {
+      setBuildingClaims(false);
+    }
+  }
+
   function handleTabChange(tab) {
     setActiveTab(tab);
-
     if (tab === "Preview" && !signedUrl && !urlLoading) {
       fetchSignedUrl();
+    }
+    if (tab === "Journey" && !journey && !journeyLoading) {
+      fetchJourney();
+    }
+    if (tab === "Linked Claims" && !claimLinks && !claimsLoading) {
+      fetchClaimLinks();
     }
   }
 
@@ -761,9 +822,187 @@ export default function EvidenceDetail() {
       </>
     );
   }
+  function renderJourneyTab() {
+    if (journeyLoading) {
+      return (
+        <div style={{ display: "flex", justifyContent: "center", padding: "40px" }}>
+          <Spinner size={24} />
+        </div>
+      );
+    }
+
+    const steps = journey?.steps || [];
+    if (steps.length === 0) {
+      return <p style={emptyStyle}>No provenance data yet.</p>;
+    }
+
+    const iconMap = {
+      upload: { icon: Upload, color: "var(--accent)" },
+      hash_computed: { icon: Hash, color: "var(--info)" },
+      ai_analysis: { icon: Cpu, color: "var(--success)" },
+      blockchain_anchored: { icon: Shield, color: "var(--success)" },
+      contradiction_linked: { icon: GitMerge, color: "var(--warning)" },
+      graph_linked: { icon: Share2, color: "var(--info)" },
+      claim_linked: { icon: Link, color: "var(--accent)" },
+    };
+
+    return (
+      <div style={{ position: "relative", paddingLeft: "40px" }}>
+        {/* Vertical line */}
+        <div
+          style={{
+            position: "absolute",
+            left: "15px",
+            top: "4px",
+            bottom: "4px",
+            width: "2px",
+            background: "var(--border)",
+          }}
+        />
+        {steps.map((step, idx) => {
+          const mapping = iconMap[step.type] || { icon: Clock, color: "var(--text-muted)" };
+          const IconComp = mapping.icon;
+          const dotColor = step.status === "flagged" ? "var(--warning)" : mapping.color;
+          return (
+            <div key={idx} style={{ position: "relative", marginBottom: "24px" }}>
+              <div
+                style={{
+                  position: "absolute",
+                  left: "-33px",
+                  top: "2px",
+                  width: "28px",
+                  height: "28px",
+                  borderRadius: "50%",
+                  background: "var(--bg-surface)",
+                  border: `2px solid ${dotColor}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <IconComp size={14} color={dotColor} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: "14px" }}>{step.name}</div>
+                <div style={{ color: "var(--text-secondary)", fontSize: "13px", marginTop: "2px" }}>
+                  {step.description}
+                </div>
+                {step.timestamp && (
+                  <div style={{ color: "var(--text-muted)", fontSize: "11px", marginTop: "4px", fontFamily: "'JetBrains Mono', monospace" }}>
+                    {relativeTime(step.timestamp)}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  function renderLinkedClaimsTab() {
+    if (claimsLoading) {
+      return (
+        <div style={{ display: "flex", justifyContent: "center", padding: "40px" }}>
+          <Spinner size={24} />
+        </div>
+      );
+    }
+
+    const links = claimLinks?.links || [];
+
+    if (links.length === 0) {
+      return (
+        <div style={{ textAlign: "center", padding: "40px" }}>
+          <p style={{ color: "var(--text-secondary)", marginBottom: "16px" }}>No claim links found.</p>
+          <button
+            onClick={handleBuildClaims}
+            disabled={buildingClaims}
+            style={{
+              background: "var(--accent)",
+              color: "#fff",
+              border: "none",
+              borderRadius: "var(--radius-sm)",
+              padding: "10px 20px",
+              fontSize: "14px",
+              fontWeight: 600,
+              cursor: buildingClaims ? "wait" : "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+            }}
+          >
+            {buildingClaims && <Spinner size={14} />}
+            {buildingClaims ? "Building..." : "Build Claim Links"}
+          </button>
+        </div>
+      );
+    }
+
+    const supporting = links.filter((l) => l.link_type === "SUPPORTS");
+    const contradicting = links.filter((l) => l.link_type === "CONTRADICTS");
+
+    function renderLinkGroup(title, items, color) {
+      if (items.length === 0) return null;
+      return (
+        <div style={{ marginBottom: "20px" }}>
+          <h4 style={{ color, fontSize: "13px", fontWeight: 600, marginBottom: "10px" }}>
+            {title} ({items.length})
+          </h4>
+          {items.map((link, idx) => (
+            <div
+              key={idx}
+              style={{
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                padding: "12px 16px",
+                marginBottom: "8px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                <span
+                  style={{
+                    padding: "2px 8px",
+                    borderRadius: "999px",
+                    background: link.link_type === "SUPPORTS" ? "rgba(22,163,74,0.15)" : "rgba(220,38,38,0.15)",
+                    color: link.link_type === "SUPPORTS" ? "var(--success)" : "var(--danger)",
+                    fontSize: "10px",
+                    fontWeight: 600,
+                  }}
+                >
+                  {link.link_type}
+                </span>
+                <span style={{ fontSize: "13px", color: "var(--text-primary)" }}>
+                  Witness: {link.witness_label || "Unknown"}
+                </span>
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                Matched entity: "{link.entity_text}" via {link.match_source}
+              </div>
+              <div style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: "'JetBrains Mono', monospace", marginTop: "4px" }}>
+                Confidence: {((link.confidence || 0) * 100).toFixed(0)}%
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    return (
+      <>
+        {renderLinkGroup("Supporting", supporting, "var(--success)")}
+        {renderLinkGroup("Contradicting", contradicting, "var(--danger)")}
+      </>
+    );
+  }
 
   function renderActiveTab() {
     switch (activeTab) {
+      case "Journey":
+        return renderJourneyTab();
+      case "Linked Claims":
+        return renderLinkedClaimsTab();
       case "Objects":
         return renderObjectsTab();
       case "OCR":

@@ -17,6 +17,8 @@ export const ROUTES = {
   ACTIVITY: "/cases/:caseId/activity",
   REPORT: "/cases/:caseId/report",
   CASE_BLOCKCHAIN: "/cases/:caseId/blockchain",
+  CASE_LEADS: "/cases/:caseId/leads",
+  CASE_HYPOTHESES: "/cases/:caseId/hypotheses",
 };
 
 export const TABLES = {
