@@ -8,6 +8,8 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from xhtml2pdf import pisa
 import google.generativeai as genai
+from app.services.lead_generator import generate_investigation_leads
+from app.services.evidence_scorer import compute_priority_score
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +84,66 @@ def generate_report(case_id: str, supabase) -> str:
             .order("relative_order", desc=False)\
             .execute().data or []
 
+        # ── New Feature Data ──────────────────────────────────────────────
+
+        # Section 9: Investigation Leads
+        leads_data = {"leads": [], "summary": ""}
+        try:
+            leads_data = generate_investigation_leads(case_id, supabase)
+        except Exception as e:
+            logger.warning(f"Lead generation failed for report (non-fatal): {e}")
+
+        # Section 10: Evidence Priority (sort existing evidence by score)
+        # Fetch contradictions and KG nodes for scoring
+        report_contradictions = supabase.table("contradictions")\
+            .select("claim_a, claim_b")\
+            .eq("case_id", case_id)\
+            .execute().data or []
+
+        report_kg = supabase.table("knowledge_graphs")\
+            .select("nodes")\
+            .eq("case_id", case_id)\
+            .execute()
+        report_kg_nodes = (report_kg.data[0].get("nodes") or []) \
+            if report_kg.data else []
+
+        # Score every evidence item
+        scored_evidence = []
+        for ev in evidence_list:
+            try:
+                score_data = compute_priority_score(
+                    ev, report_contradictions, report_kg_nodes
+                )
+                scored_evidence.append({**ev, **score_data})
+            except Exception:
+                scored_evidence.append({
+                    **ev,
+                    "score": 0,
+                    "priority": "LOW",
+                    "priority_breakdown": {}
+                })
+
+        # Sort: CRITICAL first, then HIGH, MEDIUM, LOW
+        priority_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+        scored_evidence.sort(
+            key=lambda e: (
+                priority_order.get(e.get("priority", "LOW"), 3),
+                -(e.get("score") or 0)
+            )
+        )
+
+        # Section 11: Hypothesis Analysis
+        hypotheses_data = []
+        try:
+            hyp_result = supabase.table("hypotheses")\
+                .select("*")\
+                .eq("case_id", case_id)\
+                .order("confidence_score", desc=True)\
+                .execute()
+            hypotheses_data = hyp_result.data or []
+        except Exception as e:
+            logger.warning(f"Hypothesis fetch failed for report (non-fatal): {e}")
+
         # ── Gemini sections ───────────────────────────────────────────
         case_summary_json = json.dumps({
             "title": case.get("title"),
@@ -125,6 +187,17 @@ def generate_report(case_id: str, supabase) -> str:
             "verified_count": sum(
                 1 for e in evidence_list if e.get("blockchain_tx_hash")
             ),
+            # New sections
+            "leads_data":        leads_data,
+            "scored_evidence":   scored_evidence,
+            "hypotheses_data":   hypotheses_data,
+            # Count for summary in section 2
+            "lead_count":        len(leads_data.get("leads", [])),
+            "hypothesis_count":  len(hypotheses_data),
+            "critical_evidence": sum(
+                1 for e in scored_evidence
+                if e.get("priority") == "CRITICAL"
+            ),
         }
 
         # ── Render HTML ───────────────────────────────────────────────
@@ -162,6 +235,9 @@ def generate_report(case_id: str, supabase) -> str:
             "contradiction_count": len(contradictions),
             "timeline_event_count": len(timeline_events),
             "blockchain_verified_count": context["verified_count"],
+            "lead_count":        len(leads_data.get("leads", [])),
+            "hypothesis_count":  len(hypotheses_data),
+            "critical_evidence": context["critical_evidence"],
         }
 
         supabase.table("reports").upsert({

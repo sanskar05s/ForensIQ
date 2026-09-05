@@ -198,6 +198,24 @@
         <td class="meta-label">Blockchain Verified</td>
         <td>{{ verified_count }} / {{ total_evidence }}</td>
       </tr>
+      {% if lead_count is defined and lead_count > 0 %}
+      <tr>
+        <td class="meta-label">Evidence Gaps Identified</td>
+        <td class="mono badge-medium">{{ lead_count }}</td>
+      </tr>
+      {% endif %}
+      {% if hypothesis_count is defined and hypothesis_count > 0 %}
+      <tr>
+        <td class="meta-label">Hypotheses Analyzed</td>
+        <td class="mono">{{ hypothesis_count }}</td>
+      </tr>
+      {% endif %}
+      {% if critical_evidence is defined and critical_evidence > 0 %}
+      <tr>
+        <td class="meta-label">Critical Priority Evidence</td>
+        <td class="mono badge-high">{{ critical_evidence }}</td>
+      </tr>
+      {% endif %}
     </table>
 
     <!-- SECTION 3: EVIDENCE SUMMARY -->
@@ -411,6 +429,212 @@
         {% endfor %}
       </ul>
     </div>
+
+    <!-- SECTION 9: INVESTIGATION LEADS -->
+    {% if leads_data.leads %}
+    <div class="page-break"></div>
+
+    <div class="section-title">
+      <span class="section-number">09 &nbsp;</span>Investigation Leads
+    </div>
+    <p style="font-size:9pt; color:#666; margin-bottom:10px;">
+      The following evidence gaps were identified by AI analysis of witness accounts.
+      These are items mentioned by witnesses that have not yet been collected as
+      physical evidence.
+    </p>
+
+    {% if leads_data.summary %}
+    <div class="ai-section" style="margin-bottom:12px;">
+      <strong>Summary:</strong> {{ leads_data.summary }}
+    </div>
+    {% endif %}
+
+    {% for lead in leads_data.leads %}
+    <table style="margin-bottom:8px;">
+      <tr>
+        <th style="width:80px;">
+          {% if lead.priority == 'HIGH' %}
+            <span class="badge-high">HIGH PRIORITY</span>
+          {% elif lead.priority == 'MEDIUM' %}
+            <span class="badge-medium">MEDIUM</span>
+          {% else %}
+            <span style="color:#059669; font-weight:bold;">LOW</span>
+          {% endif %}
+        </th>
+        <th style="text-align:left;">{{ lead.gap }}</th>
+      </tr>
+      <tr>
+        <td style="vertical-align:top; color:#666; font-size:9pt;">
+          Mentioned by:
+        </td>
+        <td style="font-size:9pt;">
+          {{ lead.mentioned_by | join(', ') if lead.mentioned_by else '—' }}
+        </td>
+      </tr>
+      <tr>
+        <td style="vertical-align:top; color:#666; font-size:9pt;">
+          Suggested Action:
+        </td>
+        <td style="font-size:9pt; font-style:italic;">
+          {{ lead.suggested_action }}
+        </td>
+      </tr>
+    </table>
+    {% endfor %}
+    {% endif %}
+
+    <!-- Only show if no leads (clean case) -->
+    {% if not leads_data.leads %}
+    <div class="section-title">
+      <span class="section-number">09 &nbsp;</span>Investigation Leads
+    </div>
+    <p style="color:#059669; font-size:9pt;">
+      ✓ No investigation gaps detected. All witness-referenced evidence
+      appears to have been collected.
+    </p>
+    {% endif %}
+
+    <!-- SECTION 10: EVIDENCE PRIORITY ANALYSIS -->
+    <div class="page-break"></div>
+
+    <div class="section-title">
+      <span class="section-number">10 &nbsp;</span>Evidence Priority Analysis
+    </div>
+    <p style="font-size:9pt; color:#666; margin-bottom:10px;">
+      Priority scores are computed from five factors: analysis confidence,
+      blockchain verification, object detection density, contradiction
+      involvement, and knowledge graph centrality. Range: 0–100.
+    </p>
+
+    {% if scored_evidence %}
+    <table>
+      <tr>
+        <th>Filename</th>
+        <th>Type</th>
+        <th>Priority</th>
+        <th style="width:50px;">Score</th>
+        <th>Blockchain</th>
+        <th>Key Factors</th>
+      </tr>
+      {% for ev in scored_evidence %}
+      <tr>
+        <td style="font-size:9pt;">{{ ev.filename[:35] }}</td>
+        <td>{{ (ev.type or '—') | upper }}</td>
+        <td>
+          {% if ev.priority == 'CRITICAL' %}
+            <span class="badge-high">CRITICAL</span>
+          {% elif ev.priority == 'HIGH' %}
+            <span class="badge-medium">HIGH</span>
+          {% elif ev.priority == 'MEDIUM' %}
+            <span style="color:#0284c7; font-weight:bold;">MEDIUM</span>
+          {% else %}
+            <span style="color:#6b7280;">LOW</span>
+          {% endif %}
+        </td>
+        <td class="mono">{{ ev.score or 0 }}/100</td>
+        <td>
+          {% if ev.blockchain_tx_hash %}
+            <span class="badge-verified">✓ VERIFIED</span>
+          {% elif ev.file_hash %}
+            <span class="badge-pending">HASH ONLY</span>
+          {% else %}
+            <span class="badge-pending">PENDING</span>
+          {% endif %}
+        </td>
+        <td style="font-size:8pt; color:#666;">
+          {% set breakdown = ev.priority_breakdown or {} %}
+          {% if breakdown.contradiction_involvement and breakdown.contradiction_involvement > 0 %}
+            Contested evidence.
+          {% endif %}
+          {% if breakdown.analysis_confidence and breakdown.analysis_confidence >= 25 %}
+            High AI confidence.
+          {% endif %}
+          {% if breakdown.blockchain and breakdown.blockchain >= 20 %}
+            Fully anchored.
+          {% endif %}
+          {% if not breakdown %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    <table class="meta-table" style="margin-top:8px;">
+      <tr>
+        <td class="meta-label">Critical Priority Items</td>
+        <td class="mono badge-high">{{ critical_evidence }}</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Total Evidence Items</td>
+        <td class="mono">{{ total_evidence }}</td>
+      </tr>
+    </table>
+    {% else %}
+    <p style="color:#666; font-size:9pt;">No analyzed evidence available.</p>
+    {% endif %}
+
+    <!-- SECTION 11: HYPOTHESIS ANALYSIS -->
+    {% if hypotheses_data %}
+    <div class="page-break"></div>
+
+    <div class="section-title">
+      <span class="section-number">11 &nbsp;</span>Hypothesis Analysis
+    </div>
+    <p style="font-size:9pt; color:#666; margin-bottom:10px;">
+      The following investigative theories were tested against all collected
+      evidence using AI analysis. Confidence scores reflect evidence support only
+      and do not constitute legal determinations.
+      <br/>
+      <strong>ForensIQ does not conclude guilt or innocence.</strong>
+    </p>
+
+    {% for hyp in hypotheses_data %}
+    <table style="margin-bottom:12px;">
+      <tr>
+        <th colspan="2">
+          Hypothesis {{ loop.index }}: {{ hyp.title }}
+        </th>
+      </tr>
+      <tr>
+        <td class="meta-label" style="width:30%;">Description</td>
+        <td style="font-size:9pt;">{{ hyp.description }}</td>
+      </tr>
+      <tr>
+        <td class="meta-label">Evidence Support</td>
+        <td>
+          <span class="mono" style="
+            {% if hyp.confidence_score >= 66 %}color:#059669;
+            {% elif hyp.confidence_score >= 41 %}color:#d97706;
+            {% else %}color:#dc2626;{% endif %}
+            font-weight:bold;">
+            {{ hyp.confidence_score }}%
+          </span>
+          ({{ (hyp.supporting or []) | length }} supporting,
+           {{ (hyp.contradicting or []) | length }} contradicting,
+           {{ (hyp.neutral or []) | length }} neutral)
+        </td>
+      </tr>
+      <tr>
+        <td class="meta-label">AI Assessment</td>
+        <td style="font-size:9pt; font-style:italic;">
+          {{ hyp.ai_explanation or '—' }}
+        </td>
+      </tr>
+      {% if hyp.unresolved %}
+      <tr>
+        <td class="meta-label">Unresolved Questions</td>
+        <td style="font-size:9pt;">
+          {% for q in hyp.unresolved[:4] %}
+            • {{ q }}<br/>
+          {% endfor %}
+        </td>
+      </tr>
+      {% endif %}
+    </table>
+    {% endfor %}
+
+    {% else %}
+    <!-- Only show section header if no hypotheses — don't show empty section -->
+    {% endif %}
 
     <!-- FOOTER -->
     <div class="footer-note">
