@@ -1,17 +1,17 @@
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
 
-export default function AppShell({ children }) {
+export default function AppShell({ children, hideSidebar = false }) {
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "240px 1fr",
+        gridTemplateColumns: hideSidebar ? "1fr" : "240px 1fr",
         minHeight: "100vh",
         background: "var(--bg)",
       }}
     >
-      <Sidebar />
+      {!hideSidebar && <Sidebar />}
 
       <div
         style={{

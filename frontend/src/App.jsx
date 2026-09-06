@@ -7,7 +7,7 @@ import CaseCreate from "./pages/CaseCreate";
 import AppShell from "./components/layout/AppShell";
 import CaseDetail from "./pages/CaseDetail";
 import CasePlaceholder from "./pages/CasePlaceholder";
-import EvidencePlaceholder from "./pages/EvidencePlaceholder";
+import EvidencePage from "./pages/EvidencePage";
 import EvidenceUpload from "./pages/EvidenceUpload";
 import { ROUTES } from "./constants";
 import EvidenceDetail from "./pages/EvidenceDetail";
@@ -32,7 +32,7 @@ function App() {
           path={ROUTES.CASES}
           element={
             <ProtectedRoute>
-              <AppShell>
+              <AppShell hideSidebar>
                 <CaseList />
               </AppShell>
             </ProtectedRoute>
@@ -62,9 +62,7 @@ function App() {
           path={ROUTES.EVIDENCE}
           element={
             <ProtectedRoute>
-              <AppShell>
-                <EvidencePlaceholder />
-              </AppShell>
+              <EvidencePage />
             </ProtectedRoute>
           }
         />

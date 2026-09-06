@@ -7,6 +7,8 @@ import {
   Share2,
   FileText,
   LogOut,
+  FlaskConical,
+  AlertCircle,
 } from "lucide-react";
 
 import { Link } from "react-router-dom";
@@ -57,33 +59,32 @@ export default function Sidebar() {
           Cases
         </Link>
 
-        <div style={{ ...itemStyle, ...disabledStyle }}>
-          <Image size={18} />
-          Evidence
-          <span style={{ marginLeft: "auto", fontSize: 11 }}>SOON</span>
-        </div>
-
         {caseId ? (
-          <Link
-            to={`/cases/${caseId}/witnesses`}
-            style={itemStyle}
-          >
-            <Users size={18} />
-            Witnesses
+          <Link to={`/cases/${caseId}/evidence`} style={itemStyle}>
+            <Image size={18} />
+            Evidence
           </Link>
         ) : (
           <div style={{ ...itemStyle, ...disabledStyle }}>
-            <Users size={18} />
-            Witnesses
-            <span style={{ marginLeft: "auto", fontSize: 11 }}>SOON</span>
+            <Image size={18} />
+            Evidence
           </div>
         )}
 
         {caseId ? (
-          <Link
-            to={`/cases/${caseId}/contradictions`}
-            style={itemStyle}
-          >
+          <Link to={`/cases/${caseId}/witnesses`} style={itemStyle}>
+            <Users size={18} />
+            Witnesses
+          </Link>
+        ) : (
+          <div style={{ ...itemStyle, ...disabledStyle }}>
+            <Users size={18} />
+            Witnesses
+          </div>
+        )}
+
+        {caseId ? (
+          <Link to={`/cases/${caseId}/contradictions`} style={itemStyle}>
             <GitMerge size={18} />
             Contradictions
           </Link>
@@ -91,7 +92,6 @@ export default function Sidebar() {
           <div style={{ ...itemStyle, ...disabledStyle }}>
             <GitMerge size={18} />
             Contradictions
-            <span style={{ marginLeft: "auto", fontSize: 11 }}>SOON</span>
           </div>
         )}
 
@@ -104,7 +104,6 @@ export default function Sidebar() {
           <div style={{ ...itemStyle, ...disabledStyle }}>
             <Clock size={18} />
             Timeline
-            <span style={{ marginLeft: "auto", fontSize: 11 }}>SOON</span>
           </div>
         )}
 
@@ -117,15 +116,44 @@ export default function Sidebar() {
           <div style={{ ...itemStyle, ...disabledStyle }}>
             <Share2 size={18} />
             Knowledge Graph
-            <span style={{ marginLeft: "auto", fontSize: 11 }}>SOON</span>
           </div>
         )}
 
-        <div style={{ ...itemStyle, ...disabledStyle }}>
-          <FileText size={18} />
-          Reports
-          <span style={{ marginLeft: "auto", fontSize: 11 }}>SOON</span>
-        </div>
+        {caseId ? (
+          <Link to={`/cases/${caseId}/hypotheses`} style={itemStyle}>
+            <FlaskConical size={18} />
+            Hypothesis Analyzer
+          </Link>
+        ) : (
+          <div style={{ ...itemStyle, ...disabledStyle }}>
+            <FlaskConical size={18} />
+            Hypothesis Analyzer
+          </div>
+        )}
+
+        {caseId ? (
+          <Link to={`/cases/${caseId}/leads`} style={itemStyle}>
+            <AlertCircle size={18} />
+            Investigation Leads
+          </Link>
+        ) : (
+          <div style={{ ...itemStyle, ...disabledStyle }}>
+            <AlertCircle size={18} />
+            Investigation Leads
+          </div>
+        )}
+
+        {caseId ? (
+          <Link to={`/cases/${caseId}/report`} style={itemStyle}>
+            <FileText size={18} />
+            Reports
+          </Link>
+        ) : (
+          <div style={{ ...itemStyle, ...disabledStyle }}>
+            <FileText size={18} />
+            Reports
+          </div>
+        )}
       </div>
 
       <button

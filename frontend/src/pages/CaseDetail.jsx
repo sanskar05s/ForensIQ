@@ -21,16 +21,13 @@ import {
 import { ROUTES } from "../constants";
 
 import { useCaseDetail } from "../hooks/useCaseDetail";
-import { useEvidence } from "../hooks/useEvidence";
 
 import ModuleCard from "../components/case/ModuleCard";
-import EvidenceCard from "../components/evidence/EvidenceCard";
 import StaleBanner from "../components/case/StaleBanner";
 import AppShell from "../components/layout/AppShell";
 import AssistantPanel from "../components/assistant/AssistantPanel";
 
 import Spinner from "../components/loading/Spinner";
-import SkeletonCard from "../components/loading/SkeletonCard";
 
 import { apiClient } from "../api/client";
 import { relativeTime } from "../utils/relativeTime";
@@ -42,7 +39,6 @@ export default function CaseDetail() {
   const navigate = useNavigate();
 
   const { case_, loading, error, refresh } = useCaseDetail(caseId);
-  const { evidence, loading: evidenceLoading } = useEvidence(caseId);
 
   const [staleModules, setStaleModules] = useState([]);
   const [staleDismissed, setStaleDismissed] = useState(false);
@@ -281,38 +277,9 @@ export default function CaseDetail() {
           <ModuleCard
             icon={<Image />}
             title="Evidence"
-            description={
-              <span>
-                Upload and manage evidence.
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/cases/${caseId}/evidence/new`);
-                  }}
-                  style={{
-                    display: "block",
-                    fontSize: 11,
-                    marginTop: 4,
-                    color: "var(--accent)",
-                    background: "transparent",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: 0,
-                  }}
-                >
-                  + Upload Evidence
-                </button>
-              </span>
-            }
+            description={`${case_.evidence_count || 0} items — Upload and manage evidence.`}
             active
-            onClick={() => {
-              const section = document.getElementById("evidence-section");
-              if (section) {
-                section.scrollIntoView({ behavior: "smooth" });
-              } else {
-                navigate(`/cases/${caseId}/evidence/new`);
-              }
-            }}
+            onClick={() => navigate(`/cases/${caseId}/evidence`)}
           />
 
           <ModuleCard
@@ -402,67 +369,6 @@ export default function CaseDetail() {
             active
             onClick={() => navigate(`/cases/${caseId}/hypotheses`)}
           />
-        </div>
-
-        {/* Evidence Section */}
-        <div id="evidence-section">
-        <h2 style={{ marginBottom: "20px" }}>Evidence</h2>
-
-        {evidenceLoading ? (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))",
-              gap: "18px",
-            }}
-          >
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </div>
-        ) : evidence.length === 0 ? (
-          <div
-            style={{
-              padding: "32px",
-              border: "1px dashed var(--border)",
-              borderRadius: "12px",
-              textAlign: "center",
-              color: "var(--text-secondary)",
-              background: "var(--bg-surface)",
-            }}
-          >
-            <p style={{ marginBottom: "18px" }}>No evidence uploaded yet.</p>
-            <button
-              onClick={() => navigate(`/cases/${caseId}/evidence/new`)}
-              style={{
-                padding: "10px 18px",
-                border: "none",
-                borderRadius: "8px",
-                background: "var(--accent)",
-                color: "#fff",
-                cursor: "pointer",
-              }}
-            >
-              Upload First Evidence
-            </button>
-          </div>
-        ) : (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))",
-              gap: "18px",
-            }}
-          >
-            {evidence.map((item) => (
-              <EvidenceCard
-                key={item.id}
-                evidence={item}
-                onClick={() => navigate(`/cases/${caseId}/evidence/${item.id}`)}
-              />
-            ))}
-          </div>
-        )}
         </div>
       </div>
 
