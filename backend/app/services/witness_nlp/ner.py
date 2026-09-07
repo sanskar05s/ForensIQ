@@ -16,6 +16,11 @@ LABEL_MAP = {
     "PRODUCT": "OBJECT",
     "ORG": "ORGANIZATION",
     "EVENT": "EVENT",
+    "CARDINAL": None,  # pure numbers — no graph value
+    "ORDINAL": None,   # "first", "second" — no graph value
+    "PERCENT": None,   # percentages
+    "MONEY": None,     # monetary values
+    "QUANTITY": None,  # measurements
 }
 
 
@@ -59,8 +64,9 @@ def extract_entities(text: str) -> list:
 
         entities.append(
             {
-                "text": ent.text,
+                "text": ent.text.strip(),
                 "type": entity_type,
+                "_spacy_label": ent.label_,
                 "start": ent.start_char,
                 "end": ent.end_char,
                 "xai_reason": (

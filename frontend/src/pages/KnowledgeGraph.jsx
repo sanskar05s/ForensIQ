@@ -85,6 +85,7 @@ export default function KnowledgeGraph() {
             communityId: n.community_id,
             degree: n.degree,
             color: n.color,
+            statementIds: n.statement_ids || [],
           },
         })),
         ...edges.map((e) => ({

@@ -6,10 +6,12 @@ const monoStyle = { fontFamily: "'JetBrains Mono', monospace" };
 const TYPE_DESCRIPTIONS = {
   PERSON: "Individual person mentioned by witnesses",
   LOCATION: "Physical location or place",
-  TIME: "Temporal reference",
-  OBJECT: "Physical object",
-  ORGANIZATION: "Organisation or institution",
+  VEHICLE: "Vehicle — car, motorcycle, or other transport",
+  OBJECT: "Physical object detected in evidence",
+  ORGANIZATION: "Organisation, institution, or group",
   EVENT: "Described event or action",
+  WITNESS: "Witness who submitted a statement in this investigation",
+  TIME: "Temporal reference",
 };
 
 export default function NodeDetailPanel({ node, onClose, cachedStatements }) {
@@ -17,11 +19,30 @@ export default function NodeDetailPanel({ node, onClose, cachedStatements }) {
 
   const color = NODE_COLORS[node.type] || "#7B8FAE";
 
-  const referenced = cachedStatements.filter((stmt) =>
-    (stmt.entities || []).some(
-      (e) => e.text.toLowerCase() === node.label.toLowerCase()
-    )
-  );
+  const referenced = cachedStatements.filter((stmt) => {
+    if (node.type === "WITNESS") {
+      const matchesId =
+        Array.isArray(node.statementIds) && node.statementIds.includes(stmt.id);
+      const matchesLabel =
+        Boolean(stmt.witness_label && node.label) &&
+        stmt.witness_label.toLowerCase() === node.label.toLowerCase();
+      return matchesId || matchesLabel;
+    }
+
+    let entities = stmt.entities;
+    if (typeof entities === "string") {
+      try {
+        entities = JSON.parse(entities);
+      } catch {
+        entities = [];
+      }
+    }
+    if (!Array.isArray(entities)) return false;
+
+    return entities.some(
+      (e) => (e.text || "").toLowerCase() === (node.label || "").toLowerCase()
+    );
+  });
 
   return (
     <div
@@ -132,6 +153,18 @@ export default function NodeDetailPanel({ node, onClose, cachedStatements }) {
         >
           Referenced in statements
         </h4>
+        {node.type === "WITNESS" && (
+          <p
+            style={{
+              fontSize: 12,
+              color: "var(--text-secondary)",
+              paddingBottom: "8px",
+            }}
+          >
+            This node represents a witness. Their reported entities
+            are connected by blue WITNESS_REPORTED edges.
+          </p>
+        )}
         {referenced.length === 0 ? (
           <p style={{ fontSize: "12px", color: "var(--text-muted)", fontStyle: "italic" }}>
             Not referenced in any statement.
