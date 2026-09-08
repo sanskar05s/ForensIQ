@@ -63,6 +63,21 @@ async def create_statement(case_id: str, body: WitnessStatementRequest):
 
     # Run all three NLP services in sequence
     entities = extract_entities(text)
+
+    # ── Gemini entity type disambiguation & missing entity extraction (non-fatal) ──
+    # Reclassifies ambiguous spaCy entities (PRODUCT, ORG) using context,
+    # and extracts missing entities if spaCy found fewer than 2 graph entities.
+    # Falls back to spaCy-only output if Gemini unavailable.
+    try:
+        from app.services.witness_nlp.entity_classifier import classify_ambiguous_entities
+        from app.services.gemini_client import _configure_gemini
+
+        gemini_model = _configure_gemini()
+        entities = classify_ambiguous_entities(text, entities, gemini_model)
+    except Exception as e:
+        logger.warning(f"Gemini entity classification skipped (non-fatal): {e}")
+        # entities remains the spaCy-only output — statement still saved correctly
+
     temporal_seq = extract_temporal_sequence(text, entities)
     hedge_result = detect_hedge_markers(text)
 
@@ -185,7 +200,8 @@ async def create_statement(case_id: str, body: WitnessStatementRequest):
             compute_sna_metrics, enrich_nodes_with_sna, get_public_metrics
         )
         supabase_client = get_supabase_client()
-        G, nodes, edges = build_graph(case_id, supabase_client)
+        G, nodes, edges = build_graph(case_id, supabase_client,
+                                       use_gemini_relationships=False)
         if nodes:
             sna = compute_sna_metrics(G)
             nodes = enrich_nodes_with_sna(nodes, sna)

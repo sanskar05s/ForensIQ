@@ -472,6 +472,82 @@ ADD CONSTRAINT knowledge_graphs_case_id_unique UNIQUE (case_id);
 
 
 
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.activity_logs TO service_role;
+
+
+
+GRANT SELECT, INSERT ON public.assistant_interactions TO service_role;
+GRANT SELECT ON public.activity_logs TO service_role;
+
+
+
+
+GRANT SELECT, INSERT, UPDATE ON public.reports TO service_role;
+GRANT SELECT, INSERT, UPDATE ON public.reports TO service_role;
+
+
+
+
+
+DELETE FROM contradictions c
+WHERE c.id NOT IN (
+    SELECT DISTINCT ON (
+        LEAST(witness_a_id::text, witness_b_id::text),
+        GREATEST(witness_a_id::text, witness_b_id::text),
+        type,
+        case_id
+    ) id
+    FROM contradictions
+    ORDER BY
+        LEAST(witness_a_id::text, witness_b_id::text),
+        GREATEST(witness_a_id::text, witness_b_id::text),
+        type,
+        case_id,
+        id
+);
+
+
+
+
+
+-- Table for Case Hypothesis Analyzer
+CREATE TABLE IF NOT EXISTS hypotheses (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id             UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    title               TEXT NOT NULL,
+    description         TEXT NOT NULL,
+    supporting          JSONB DEFAULT '[]',   -- [{evidence_id, reason, confidence}]
+    contradicting       JSONB DEFAULT '[]',   -- [{evidence_id, reason, confidence}]
+    neutral             JSONB DEFAULT '[]',   -- [{evidence_id}]
+    unresolved          JSONB DEFAULT '[]',   -- [question strings]
+    confidence_score    INT DEFAULT 0,        -- 0-100
+    ai_explanation      TEXT,
+    created_at          TIMESTAMPTZ DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.hypotheses TO service_role;
+CREATE INDEX idx_hypotheses_case ON hypotheses (case_id);
+
+-- Table for Evidence-to-Claim Linking
+CREATE TABLE IF NOT EXISTS evidence_claim_links (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id         UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    evidence_id     UUID NOT NULL REFERENCES evidence(id) ON DELETE CASCADE,
+    statement_id    UUID NOT NULL REFERENCES witness_statements(id) ON DELETE CASCADE,
+    claim_text      TEXT NOT NULL,
+    entity_text     TEXT NOT NULL,
+    link_type       TEXT NOT NULL CHECK (link_type IN ('supports','contradicts','unresolved')),
+    confidence      FLOAT DEFAULT 0.0,
+    match_source    TEXT,  -- 'ocr', 'object_detection', 'extracted_text'
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.evidence_claim_links TO service_role;
+CREATE INDEX idx_claim_links_case     ON evidence_claim_links (case_id);
+CREATE INDEX idx_claim_links_evidence ON evidence_claim_links (evidence_id);
+CREATE INDEX idx_claim_links_statement ON evidence_claim_links (statement_id);
+
 
 
 

@@ -26,12 +26,19 @@ RESPONSE FORMAT (use this structure every time):
 **Suggested actions:** [1-3 concrete next steps based on data gaps — omit if not asked]"""
 
 
+_cached_model = None
+
+
 def _configure_gemini():
+    global _cached_model
+    if _cached_model is not None:
+        return _cached_model
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("GEMINI_API_KEY not set in environment")
     genai.configure(api_key=api_key)
-    return genai.GenerativeModel(GEMINI_MODEL)
+    _cached_model = genai.GenerativeModel(GEMINI_MODEL)
+    return _cached_model
 
 
 def assemble_context(case_id: str, supabase) -> dict:

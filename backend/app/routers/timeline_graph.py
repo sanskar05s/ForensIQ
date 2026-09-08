@@ -163,8 +163,9 @@ async def build_case_graph(case_id: str):
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
-    # Build graph
-    G, nodes, edges = build_graph(case_id, supabase)
+    # Build graph (manual rebuild uses full semantic extraction via Gemini)
+    G, nodes, edges = build_graph(case_id, supabase,
+                                   use_gemini_relationships=True)
 
     if len(nodes) == 0:
         return {

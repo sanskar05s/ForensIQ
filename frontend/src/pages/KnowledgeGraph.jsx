@@ -44,6 +44,11 @@ export default function KnowledgeGraph() {
     setLoading(true);
     try {
       const res = await apiClient(`/graph/cases/${caseId}`);
+      console.log("GRAPH FETCH RESULT");
+      console.log("nodes count:", (res?.nodes || []).length);
+      console.log("edges count:", (res?.edges || []).length);
+      console.log("edge relations:", (res?.edges || []).map((e) => `${e.source} --(${e.relation})--> ${e.target}`));
+      console.log("node IDs:", (res?.nodes || []).map((n) => n.id));
       setGraphData(res);
     } catch {
       setGraphData(null);
@@ -95,6 +100,10 @@ export default function KnowledgeGraph() {
             target: e.target,
             relation: e.relation,
             weight: e.weight,
+            confidence: e.confidence,
+            source_statement_id: e.source_statement_id,
+            source_witness: e.source_witness,
+            evidence_text: e.evidence_text,
           },
         })),
       ],
@@ -190,10 +199,11 @@ export default function KnowledgeGraph() {
       const res = await apiClient(`/graph/cases/${caseId}/build`, {
         method: "POST",
       });
+      console.log("GRAPH REBUILD RESPONSE", res);
       setRunResult(res);
       setTimeout(() => setRunResult(null), 5000);
       setSelectedNode(null);
-      fetchGraph();
+      await fetchGraph();
     } catch (err) {
       setRunError(err.message || "Failed to build graph.");
     } finally {
@@ -397,6 +407,7 @@ export default function KnowledgeGraph() {
               caseId={caseId}
               onClose={() => setSelectedNode(null)}
               cachedStatements={cachedStatements}
+              edges={graphData?.edges || []}
             />
           </div>
         )}

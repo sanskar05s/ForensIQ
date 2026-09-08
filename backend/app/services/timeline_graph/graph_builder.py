@@ -2,6 +2,8 @@ import re
 import networkx as nx
 from typing import Dict, Tuple
 import logging
+from app.services.gemini_client import _configure_gemini
+from app.services.timeline_graph.relationship_extractor import extract_relationships
 
 logger = logging.getLogger(__name__)
 
@@ -51,14 +53,13 @@ def make_node_id(text: str, entity_type: str) -> str:
     return f"{entity_type}_{clean}"
 
 
-def build_graph(case_id: str, supabase) -> Tuple[nx.Graph, list, list]:
+def build_graph(case_id: str, supabase,
+                use_gemini_relationships: bool = False) -> Tuple[nx.Graph, list, list]:
     """
-    Builds a knowledge graph from:
-    - Entity mentions in witness_statements.entities (Module 3)
-    - Object detections in evidence.object_detections (Module 1)
-
-    Returns (NetworkX Graph, nodes_list, edges_list) where nodes_list
-    and edges_list are JSON-serialisable dicts for storage in Supabase.
+    use_gemini_relationships=False: fast rebuild, co-occurrence edges only.
+      Use this for auto-rebuilds triggered by statement submission.
+    use_gemini_relationships=True: full semantic extraction via Gemini.
+      Use this for manual "Rebuild Graph" button clicks.
     """
     G = nx.Graph()
 
@@ -67,7 +68,7 @@ def build_graph(case_id: str, supabase) -> Tuple[nx.Graph, list, list]:
 
     # ─── Source 1: Witness statement entities ─────────────────────────
     statements = supabase.table("witness_statements")\
-        .select("id, witness_label, entities")\
+        .select("id, witness_label, entities, raw_text")\
         .eq("case_id", case_id)\
         .eq("analysis_status", "analyzed")\
         .execute().data or []
@@ -210,16 +211,69 @@ def build_graph(case_id: str, supabase) -> Tuple[nx.Graph, list, list]:
                     G.add_edge(nid_a, nid_b, weight=1,
                                relation="co-detected")
 
+    # ── Semantic relationship extraction via Gemini ────────────────────────────
+    # Only runs when use_gemini_relationships=True (manual rebuild).
+    # Auto-rebuilds triggered by statement submission use co-occurrence only.
+
+    semantic_edges = []
+    if not use_gemini_relationships:
+        logger.info("Skipping Gemini relationship extraction (auto-rebuild mode)")
+    else:
+        try:
+            gemini_model = _configure_gemini()
+            for stmt in statements:
+                stmt_edges = extract_relationships(stmt, gemini_model)
+                for edge in stmt_edges:
+                    # Add or strengthen edge
+                    src = edge["source"]
+                    tgt = edge["target"]
+                    if G.has_edge(src, tgt):
+                        # Keep the more specific relation type
+                        existing_rel = G[src][tgt].get("relation", "co-mentioned")
+                        if existing_rel == "co-mentioned":
+                            G[src][tgt]["relation"] = edge["relation"]
+                            G[src][tgt]["source_statement_id"] = edge.get("source_statement_id")
+                            G[src][tgt]["source_witness"] = edge.get("source_witness")
+                            G[src][tgt]["evidence_text"] = edge.get("evidence_text")
+                        G[src][tgt]["weight"] += 1
+                        G[src][tgt]["confidence"] = max(
+                            G[src][tgt].get("confidence") or 0,
+                            edge["confidence"]
+                        )
+                    else:
+                        G.add_edge(src, tgt,
+                                   relation=edge["relation"],
+                                   weight=edge["weight"],
+                                   confidence=edge["confidence"],
+                                   source_statement_id=edge["source_statement_id"],
+                                   source_witness=edge["source_witness"],
+                                   evidence_text=edge["evidence_text"])
+                    semantic_edges.append(edge)
+
+            logger.info(
+                f"Semantic relationship extraction: "
+                f"{len(semantic_edges)} typed edges added for case {case_id}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Semantic relationship extraction skipped (non-fatal): {e}. "
+                f"Graph uses co-occurrence edges only."
+            )
+
     # Build serialisable nodes list
     nodes = list(entity_data.values())
 
     # Build serialisable edges list
     edges = [
         {
-            "source": u,
-            "target": v,
-            "relation": data.get("relation", "co-mentioned"),
-            "weight": data.get("weight", 1)
+            "source":              u,
+            "target":              v,
+            "relation":            data.get("relation", "co-mentioned"),
+            "weight":              data.get("weight", 1),
+            "confidence":          data.get("confidence"),
+            "source_statement_id": data.get("source_statement_id"),
+            "source_witness":      data.get("source_witness"),
+            "evidence_text":       data.get("evidence_text"),
         }
         for u, v, data in G.edges(data=True)
     ]

@@ -14,10 +14,14 @@ const TYPE_DESCRIPTIONS = {
   TIME: "Temporal reference",
 };
 
-export default function NodeDetailPanel({ node, onClose, cachedStatements }) {
+export default function NodeDetailPanel({ node, onClose, cachedStatements, edges = [] }) {
   if (!node) return null;
 
   const color = NODE_COLORS[node.type] || "#7B8FAE";
+
+  const connectedEdges = Array.isArray(node.connectedEdges)
+    ? node.connectedEdges
+    : (edges || []).filter((e) => e.source === node.id || e.target === node.id);
 
   const referenced = cachedStatements.filter((stmt) => {
     if (node.type === "WITNESS") {
@@ -184,6 +188,67 @@ export default function NodeDetailPanel({ node, onClose, cachedStatements }) {
               >
                 {stmt.witness_label}
               </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Edge list with provenance */}
+      <div style={{ marginBottom: "20px" }}>
+        <h4
+          style={{
+            fontSize: "12px",
+            fontWeight: 600,
+            color: "var(--text-muted)",
+            marginBottom: "8px",
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+          }}
+        >
+          Relationships ({connectedEdges.length})
+        </h4>
+        {connectedEdges.length === 0 ? (
+          <p style={{ fontSize: "12px", color: "var(--text-muted)", fontStyle: "italic" }}>
+            No connected relationships.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+            {connectedEdges.map((edge, i) => (
+              <div
+                key={i}
+                style={{
+                  fontSize: 11,
+                  padding: "4px 0",
+                  borderBottom: "1px solid var(--border)",
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: "'JetBrains Mono', monospace",
+                    color:
+                      edge.relation === "co-mentioned"
+                        ? "var(--text-muted)"
+                        : "var(--accent, #3B82F6)",
+                    fontSize: 10,
+                  }}
+                >
+                  {edge.relation}
+                </span>
+                {" → "}
+                {edge.target === node.id ? edge.source : edge.target}
+                {edge.source_witness && (
+                  <div
+                    style={{
+                      color: "var(--text-muted)",
+                      fontSize: 10,
+                      marginTop: 2,
+                    }}
+                  >
+                    Reported by: {edge.source_witness}
+                    {edge.evidence_text && ` — "${edge.evidence_text}"`}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}
