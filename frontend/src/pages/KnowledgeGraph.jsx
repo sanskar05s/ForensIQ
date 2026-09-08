@@ -14,6 +14,12 @@ cytoscape.use(coseBilkent);
 
 const monoStyle = { fontFamily: "'JetBrains Mono', monospace" };
 
+const SEMANTIC_RELATIONS = new Set([
+  "HIT", "SAW", "OBSERVED", "FOLLOWED", "FLED_TO", "ENTERED", "EXITED",
+  "LOCATED_AT", "WAITED_AT", "USED_VEHICLE", "RODE", "DROVE", "PUSHED",
+  "GRABBED", "CARRIED", "APPROACHED", "FLED_VIA", "CALLED", "REPORTED_TO",
+]);
+
 export default function KnowledgeGraph() {
   const { caseId } = useParams();
   const navigate = useNavigate();
@@ -27,6 +33,12 @@ export default function KnowledgeGraph() {
   const [runError, setRunError] = useState("");
   const [selectedNode, setSelectedNode] = useState(null);
   const [cachedStatements, setCachedStatements] = useState([]);
+  const [visibleRelations, setVisibleRelations] = useState({
+    semantic: true,
+    witness: false,
+    cooccur: false,
+  });
+  const [minMentions, setMinMentions] = useState(2);
 
   /* Fetch statements once for NodeDetailPanel */
   useEffect(() => {
@@ -44,11 +56,6 @@ export default function KnowledgeGraph() {
     setLoading(true);
     try {
       const res = await apiClient(`/graph/cases/${caseId}`);
-      console.log("GRAPH FETCH RESULT");
-      console.log("nodes count:", (res?.nodes || []).length);
-      console.log("edges count:", (res?.edges || []).length);
-      console.log("edge relations:", (res?.edges || []).map((e) => `${e.source} --(${e.relation})--> ${e.target}`));
-      console.log("node IDs:", (res?.nodes || []).map((n) => n.id));
       setGraphData(res);
     } catch {
       setGraphData(null);
@@ -57,14 +64,32 @@ export default function KnowledgeGraph() {
     }
   }
 
-  /* Initialize Cytoscape when graph data changes */
+  /* Initialize Cytoscape when graph data or filter options change */
   useEffect(() => {
     if (!graphData || !graphRef.current) return;
 
     const nodes = graphData.nodes || [];
     const edges = graphData.edges || [];
 
-    if (nodes.length === 0) return;
+    // Filter nodes by mention count and witness visibility
+    const filteredNodes = nodes.filter((n) => {
+      if (n.type === "WITNESS") {
+        return visibleRelations.witness;
+      }
+      return (n.mention_count ?? 0) >= minMentions;
+    });
+
+    const validNodeIds = new Set(filteredNodes.map((n) => n.id));
+
+    // Filter edges by relationship type and ensure endpoints exist in filteredNodes
+    const visibleEdges = edges.filter((e) => {
+      if (!validNodeIds.has(e.source) || !validNodeIds.has(e.target)) {
+        return false;
+      }
+      if (SEMANTIC_RELATIONS.has(e.relation)) return visibleRelations.semantic;
+      if (e.relation === "WITNESS_REPORTED") return visibleRelations.witness;
+      return visibleRelations.cooccur;
+    });
 
     // Destroy previous instance
     if (cyRef.current) {
@@ -72,7 +97,9 @@ export default function KnowledgeGraph() {
       cyRef.current = null;
     }
 
-    const coloredNodes = nodes.map((n) => ({
+    if (filteredNodes.length === 0) return;
+
+    const coloredNodes = filteredNodes.map((n) => ({
       ...n,
       color: NODE_COLORS[n.type] || "#7B8FAE",
     }));
@@ -93,9 +120,9 @@ export default function KnowledgeGraph() {
             statementIds: n.statement_ids || [],
           },
         })),
-        ...edges.map((e) => ({
+        ...visibleEdges.map((e) => ({
           data: {
-            id: `${e.source}__${e.target}`,
+            id: `${e.source}__${e.target}__${e.relation}`,
             source: e.source,
             target: e.target,
             relation: e.relation,
@@ -133,23 +160,59 @@ export default function KnowledgeGraph() {
             "border-color": "#3B82F6",
           },
         },
+        // All edges: no label by default, thin line
         {
           selector: "edge",
           style: {
-            width: "mapData(weight, 1, 5, 1, 4)",
+            width: "mapData(weight, 1, 5, 1, 3)",
             "line-color": "#1E2D45",
-            "target-arrow-color": "#1E2D45",
-            "target-arrow-shape": "triangle",
+            "target-arrow-shape": "none",
             "curve-style": "bezier",
+            label: "",
+          },
+        },
+        // Semantic edges only: show label + distinct color + arrow
+        {
+          selector:
+            'edge[relation != "co-mentioned"][relation != "co-detected"][relation != "WITNESS_REPORTED"][relation != "temporal-context"]',
+          style: {
+            "line-color": "#7C3AED",
+            "target-arrow-color": "#7C3AED",
+            "target-arrow-shape": "triangle",
             label: "data(relation)",
-            "font-size": "8px",
-            color: "#4A5C75",
+            "font-size": "9px",
+            color: "#7C3AED",
+            "text-rotation": "autorotate",
+            "text-background-color": "#1e293b",
+            "text-background-opacity": 0.8,
+            "text-background-padding": "2px",
+            width: 2,
+          },
+        },
+        // WITNESS_REPORTED: subtle blue, no label
+        {
+          selector: 'edge[relation = "WITNESS_REPORTED"]',
+          style: {
+            "line-color": "#1D4ED8",
+            "line-style": "dashed",
+            width: 1,
+            opacity: 0.4,
+          },
+        },
+        // co-mentioned / co-detected: very subtle, no label
+        {
+          selector:
+            'edge[relation = "co-mentioned"], edge[relation = "co-detected"]',
+          style: {
+            "line-color": "#1E2D45",
+            width: 1,
+            opacity: 0.25,
           },
         },
       ],
       layout: {
         name: "cose-bilkent",
-        animate: nodes.length <= 100,
+        animate: filteredNodes.length <= 100,
         animationDuration: 500,
         nodeRepulsion: 8000,
         idealEdgeLength: 100,
@@ -189,7 +252,7 @@ export default function KnowledgeGraph() {
         cyRef.current = null;
       }
     };
-  }, [graphData]);
+  }, [graphData, visibleRelations, minMentions]);
 
   async function handleBuild() {
     setRunning(true);
@@ -199,7 +262,6 @@ export default function KnowledgeGraph() {
       const res = await apiClient(`/graph/cases/${caseId}/build`, {
         method: "POST",
       });
-      console.log("GRAPH REBUILD RESPONSE", res);
       setRunResult(res);
       setTimeout(() => setRunResult(null), 5000);
       setSelectedNode(null);
@@ -385,6 +447,74 @@ export default function KnowledgeGraph() {
             >
               Rebuild Graph
             </button>
+          </div>
+        )}
+
+        {/* Filters */}
+        {!loading && hasGraph && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              marginBottom: "12px",
+              flexWrap: "wrap",
+            }}
+          >
+            {[
+              { key: "semantic", label: "Semantic", color: "#7C3AED" },
+              { key: "witness", label: "Witnesses", color: "#1D4ED8" },
+              { key: "cooccur", label: "Co-occurrence", color: "#374151" },
+            ].map(({ key, label, color }) => (
+              <button
+                key={key}
+                onClick={() =>
+                  setVisibleRelations((v) => ({ ...v, [key]: !v[key] }))
+                }
+                style={{
+                  padding: "4px 12px",
+                  borderRadius: "6px",
+                  fontSize: "12px",
+                  border: `1px solid ${color}`,
+                  background: visibleRelations[key] ? color : "transparent",
+                  color: visibleRelations[key] ? "#fff" : color,
+                  cursor: "pointer",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+
+            <div
+              style={{
+                display: "flex",
+                gap: "6px",
+                alignItems: "center",
+                marginLeft: "16px",
+              }}
+            >
+              <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                Min mentions:
+              </span>
+              {[1, 2, 3].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setMinMentions(n)}
+                  style={{
+                    padding: "2px 10px",
+                    borderRadius: "4px",
+                    fontSize: "11px",
+                    border: "1px solid var(--border)",
+                    background:
+                      minMentions === n ? "var(--accent)" : "transparent",
+                    color: minMentions === n ? "#fff" : "var(--text-muted)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {n}+
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
