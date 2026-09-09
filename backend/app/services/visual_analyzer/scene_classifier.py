@@ -1,7 +1,7 @@
 import torch
 import torchvision.models as models
 import torchvision.transforms as transforms
-from PIL import Image
+from PIL import Image, ImageOps
 
 from app.services.xai_formatter import build_analysis
 
@@ -66,6 +66,7 @@ def classify_scene(image_path: str) -> dict:
         model, transform = get_model()
 
         image = Image.open(image_path).convert("RGB")
+        image = ImageOps.exif_transpose(image)
         tensor = transform(image).unsqueeze(0)
 
         with torch.no_grad():
