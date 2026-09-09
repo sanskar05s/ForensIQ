@@ -174,7 +174,7 @@ def build_graph(case_id: str, supabase,
         for det in detections:
             label = (det.get("label") or "").strip()
             confidence = det.get("confidence", 0)
-            if not label or confidence < 0.70:
+            if not label or confidence < 0.55:
                 continue
 
             # Only investigatively relevant YOLO categories

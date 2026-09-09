@@ -14,15 +14,25 @@ def get_model():
     return _model
 
 
-def detect_objects(image_path: str, threshold: float = 0.70) -> list:
+def detect_objects(image_path: str, threshold: float = 0.40) -> list:
     """
-    Runs YOLOv8n on an image file.
-    Returns list of detections above threshold.
+    Runs YOLOv8n object detection.
+    Threshold lowered to 0.40 for forensic use — recovers distant,
+    occluded, and small objects that 0.70 would discard.
+    High-resolution inference (imgsz=1280) preserves detail in
+    multi-megapixel crime scene and CCTV images.
     """
 
     model = get_model()
 
-    results = model(image_path, conf=threshold)
+    results = model(
+        image_path,
+        conf=threshold,     # 0.40 — forensic recall optimized
+        imgsz=1280,         # was 640 — preserves fine detail
+        iou=0.45,           # slightly permissive NMS for dense scenes
+        max_det=300,        # was default 100 — allows dense parking/crowd
+        verbose=False,
+    )
 
     detections = []
 
