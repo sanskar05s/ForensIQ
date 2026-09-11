@@ -87,21 +87,31 @@ def analyze_image(case_id: str, evidence_id: str):
             f"Scene: {scene_label}."
         )
 
-        # 7 — Compute average confidence across all results
-        all_confidences = []
-        for d in detections:
-            all_confidences.append(d.get("confidence", 0.0))
-        for o in ocr_results:
-            all_confidences.append(o.get("confidence", 0.0))
-        scene_conf = scene.get("confidence", 0.0)
-        if scene_conf > 0:
-            all_confidences.append(scene_conf)
+        # 7 — Weighted component confidence ──────────────────────────────────────────
+        # Detection confidence: average of all YOLO scores (or 0 if none detected)
+        det_scores = [d.get("confidence", 0.0) for d in detections]
+        c_detection = sum(det_scores) / len(det_scores) if det_scores else 0.0
 
-        avg_confidence = (
-            sum(all_confidences) / len(all_confidences)
-            if all_confidences
-            else 0.0
-        )
+        # Scene confidence: direct from Places365 classifier
+        c_scene = float(scene.get("confidence") or 0.0)
+
+        # OCR confidence: average of filtered text blocks only
+        # (noise already filtered in ocr.py, so this average is meaningful)
+        ocr_scores = [o.get("confidence", 0.0) for o in ocr_results]
+        c_ocr = sum(ocr_scores) / len(ocr_scores) if ocr_scores else 0.0
+
+        # Weighted combination:
+        # Detection (50%) — primary forensic signal
+        # Scene (30%)     — environmental context
+        # OCR (20%)       — text evidence (excluded if no text in scene)
+        if ocr_results:
+            avg_confidence = (c_detection * 0.50 + c_scene * 0.30 + c_ocr * 0.20)
+        else:
+            # No text detected — redistribute OCR weight to detection and scene
+            avg_confidence = (c_detection * 0.65 + c_scene * 0.35)
+
+        avg_confidence = round(float(avg_confidence), 3)
+        # ────────────────────────────────────────────────────────────────────────────
 
         # 8 — Update evidence row with results
         supabase.table("evidence").update(
