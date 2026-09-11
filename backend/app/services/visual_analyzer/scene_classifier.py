@@ -44,76 +44,120 @@ _model_loaded: bool = False
 # Categories not listed fall back to the closest group via indoor/outdoor flag.
 
 PLACES_TO_FORENSIQ = {
-    # Indoor residential
-    "bedroom":              "indoor room",
-    "bathroom":             "indoor room",
-    "living_room":          "indoor room",
-    "kitchen":              "indoor room",
-    "dining_room":          "indoor room",
-    "nursery":              "indoor room",
-    "playroom":             "indoor room",
+    # ── Indoor rooms ──────────────────────────────────────────────
+    "bedroom":                      "indoor room",
+    "bathroom":                     "indoor room",
+    "living_room":                  "indoor room",
+    "kitchen":                      "indoor room",
+    "dining_room":                  "indoor room",
+    "nursery":                      "indoor room",
+    "playroom":                     "indoor room",
+    "recreation_room":              "indoor room",
+    "childs_room":                  "indoor room",
+    "clean_room":                   "indoor room",
+    "laundromat":                   "indoor room",
+    "basement":                     "indoor room",
+    "attic":                        "indoor room",
 
-    # Office / commercial indoor
-    "office":               "office space",
-    "conference_room":      "office space",
-    "computer_room":        "office space",
-    "library/indoor":       "office space",
-    "server_room":          "office space",
-    "reception":            "office space",
-    "waiting_room":         "office space",
+    # ── Office / work spaces ───────────────────────────────────────
+    "office":                       "office space",
+    "office_cubicles":              "office space",
+    "conference_room":              "office space",
+    "computer_room":                "office space",
+    "server_room":                  "office space",
+    "reception":                    "office space",
+    "waiting_room":                 "office space",
+    "library/indoor":               "office space",
+    "archive":                      "office space",
+    "courtroom":                    "office space",
+    "bank_vault":                   "office space",
+    "operating_room":               "office space",
+    "hospital_room":                "indoor room",
+    "chemistry_lab":                "office space",
+    "control_room":                 "office space",
+    "cockpit":                      "vehicle interior",
 
-    # Corridor / transit indoor
-    "corridor":             "corridor",
-    "hallway":              "corridor",
-    "staircase":            "corridor",
-    "elevator_lobby":       "corridor",
-    "subway_station/platform": "corridor",
+    # ── Corridor / transit ─────────────────────────────────────────
+    "corridor":                     "corridor",
+    "hallway":                      "corridor",
+    "staircase":                    "corridor",
+    "elevator_lobby":               "corridor",
+    "escalator/indoor":             "corridor",
+    "subway_station/platform":      "corridor",
+    "train_station/platform":       "corridor",
+    "subway_station/underground":   "corridor",
+    "airport_terminal":             "corridor",
+    "bus_station/indoor":           "corridor",
 
-    # Vehicle interior
-    "bus_interior":         "vehicle interior",
-    "train_interior":       "vehicle interior",
-    "car_interior":         "vehicle interior",
-    "airplane_cabin":       "vehicle interior",
-    "cockpit":              "vehicle interior",
+    # ── Vehicle interior ───────────────────────────────────────────
+    "car_interior":                 "vehicle interior",
+    "bus_interior":                 "vehicle interior",
+    "train_interior":               "vehicle interior",
+    "airplane_cabin":               "vehicle interior",
+    "elevator/door":                "vehicle interior",
 
-    # Outdoor street / urban
-    "street":               "outdoor street",
-    "road":                 "outdoor street",
-    "highway":              "outdoor street",
-    "crosswalk":            "outdoor street",
-    "sidewalk":             "outdoor street",
-    "alley":                "outdoor street",
-    "traffic_island":       "outdoor street",
-    "downtown":             "outdoor street",
+    # ── Outdoor street ─────────────────────────────────────────────
+    "street":                       "outdoor street",
+    "road":                         "outdoor street",
+    "highway":                      "outdoor street",
+    "crosswalk":                    "outdoor street",
+    "sidewalk":                     "outdoor street",
+    "alley":                        "outdoor street",
+    "traffic_island":               "outdoor street",
+    "downtown":                     "outdoor street",
+    "residential_neighborhood":     "outdoor street",
+    "driveway":                     "outdoor street",
 
-    # Parking
-    "parking_lot":          "parking area",
-    "gas_station":          "parking area",
-    "parking_garage/indoor": "parking area",
-    "parking_garage/outdoor": "parking area",
+    # ── Parking ────────────────────────────────────────────────────
+    "parking_lot":                  "parking area",
+    "parking_garage/indoor":        "parking area",
+    "parking_garage/outdoor":       "parking area",
+    "gas_station":                  "parking area",
+    "auto_showroom":                "parking area",
 
-    # Public spaces
-    "plaza":                "public space",
-    "market/outdoor":       "public space",
-    "shopping_mall/indoor": "public space",
-    "airport_terminal":     "public space",
-    "train_station/platform": "public space",
-    "bank_vault":           "public space",
-    "hospital":             "public space",
-    "supermarket":          "public space",
-    "restaurant":           "public space",
-    "bar":                  "public space",
-    "shop/indoor":          "public space",
+    # ── Public space ───────────────────────────────────────────────
+    "plaza":                        "public space",
+    "market/outdoor":               "public space",
+    "market/indoor":                "public space",
+    "shopping_mall/indoor":         "public space",
+    "supermarket":                  "public space",
+    "restaurant":                   "public space",
+    "restaurant_kitchen":           "public space",
+    "bar":                          "public space",
+    "cafeteria":                    "public space",
+    "food_court":                   "public space",
+    "hospital":                     "public space",
+    "pharmacy":                     "public space",
+    "hotel_room":                   "indoor room",
+    "hotel/outdoor":                "public space",
+    "stadium/outdoor":              "public space",
+    "arena/indoor":                 "public space",
+    "church/indoor":                "public space",
+    "mosque/indoor":                "public space",
 
-    # Outdoor nature
-    "park":                 "outdoor nature",
-    "forest/broadleaf":     "outdoor nature",
-    "field/wild":           "outdoor nature",
-    "beach":                "outdoor nature",
-    "mountain":             "outdoor nature",
-    "river":                "outdoor nature",
-    "sky":                  "outdoor nature",
-    "cliff":                "outdoor nature",
+    # ── Outdoor nature ─────────────────────────────────────────────
+    "park":                         "outdoor nature",
+    "forest/broadleaf":             "outdoor nature",
+    "forest_path":                  "outdoor nature",
+    "forest/needleleaf":            "outdoor nature",
+    "field/wild":                   "outdoor nature",
+    "field/cultivated":             "outdoor nature",
+    "beach":                        "outdoor nature",
+    "mountain":                     "outdoor nature",
+    "river":                        "outdoor nature",
+    "lake/natural":                 "outdoor nature",
+    "waterfall/block":              "outdoor nature",
+    "sky":                          "outdoor nature",
+    "cliff":                        "outdoor nature",
+    "rainforest":                   "outdoor nature",
+    "bamboo_forest":                "outdoor nature",
+    "swamp":                        "outdoor nature",
+    "desert/sand":                  "outdoor nature",
+    "desert/vegetation":            "outdoor nature",
+    "lawn":                         "outdoor nature",
+    "orchard":                      "outdoor nature",
+    "rice_paddy":                   "outdoor nature",
+    "glacier":                      "outdoor nature",
 }
 
 # Standard 8 ForensIQ scene labels (unchanged from original)
@@ -137,7 +181,7 @@ def _load_model():
         with open(_LABELS_PATH) as f:
             # Format: "/a/abbey 0" — extract the name part
             _classes = [
-                line.strip().split(" ")[0].split("/")[-1].replace("_", " ")
+                line.strip().split(" ")[0][3:]
                 for line in f if line.strip()
             ]
     else:
@@ -239,25 +283,56 @@ def classify_scene(image_path: str) -> dict:
     top_raw = classes[top5_idx[0]] if top5_idx[0] < len(classes) else "unknown"
     top_conf = top5_vals[0]
 
-    # Accumulate ForensIQ scores across top-5
+    OUTDOOR_KEYWORDS = [
+        "park", "garden", "forest", "field", "beach", "mountain",
+        "river", "lake", "waterfall", "sky", "cliff", "desert",
+        "lawn", "orchard", "nature", "swamp", "glacier", "rainforest",
+    ]
+    STREET_KEYWORDS = [
+        "street", "road", "highway", "alley", "crosswalk", "sidewalk",
+        "downtown", "neighborhood", "driveway", "traffic",
+    ]
+    PARKING_KEYWORDS = ["parking", "garage", "gas_station"]
+    CORRIDOR_KEYWORDS = [
+        "corridor", "hallway", "staircase", "elevator", "platform",
+        "subway", "terminal", "escalator",
+    ]
+    VEHICLE_KEYWORDS = [
+        "car_interior", "bus_interior", "train_interior",
+        "airplane", "cockpit",
+    ]
+    OFFICE_KEYWORDS = [
+        "office", "conference", "computer_room", "server", "library",
+        "archive", "lab", "control_room",
+    ]
+    INDOOR_KEYWORDS = [
+        "bedroom", "bathroom", "living_room", "kitchen", "dining",
+        "nursery", "playroom", "laundromat", "basement", "attic",
+        "hospital_room", "hotel_room",
+    ]
+
+    def _fallback(raw: str) -> str:
+        if any(k in raw for k in PARKING_KEYWORDS):   return "parking area"
+        if any(k in raw for k in VEHICLE_KEYWORDS):   return "vehicle interior"
+        if any(k in raw for k in CORRIDOR_KEYWORDS):  return "corridor"
+        if any(k in raw for k in STREET_KEYWORDS):    return "outdoor street"
+        if any(k in raw for k in OUTDOOR_KEYWORDS):   return "outdoor nature"
+        if any(k in raw for k in OFFICE_KEYWORDS):    return "office space"
+        if any(k in raw for k in INDOOR_KEYWORDS):    return "indoor room"
+        return "public space"   # genuine fallback only
+
     forensiq_scores: dict = {}
     for idx, conf in zip(top5_idx, top5_vals):
         raw = classes[idx] if idx < len(classes) else "unknown"
-        forensiq = PLACES_TO_FORENSIQ.get(raw)
-
-        # Fallback: use indoor/outdoor heuristic from class name
-        if forensiq is None:
-            is_indoor = any(k in raw for k in [
-                "indoor", "room", "office", "hall", "bath", "bed",
-                "kitchen", "living", "dining", "shop", "store", "bar",
-                "restaurant", "hospital", "library", "studio", "gym"
-            ])
-            forensiq = "indoor room" if is_indoor else "public space"
-
+        forensiq = PLACES_TO_FORENSIQ.get(raw) or _fallback(raw)
         forensiq_scores[forensiq] = forensiq_scores.get(forensiq, 0) + conf
 
     best_label = max(forensiq_scores, key=forensiq_scores.get)
-    best_conf  = forensiq_scores[best_label]
+
+    # Confidence = top-1 raw probability, NOT sum of bucket scores.
+    # Summing bucket scores causes artificial 100% confidence.
+    top1_raw_conf = float(top5_vals[0])
+    best_conf = top1_raw_conf
 
     # Environment tag
     indoor_labels = {"indoor room", "office space", "corridor", "vehicle interior"}
