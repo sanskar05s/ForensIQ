@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -7,14 +7,73 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  UploadCloud,
+  FileText,
+  CheckCircle,
+  XCircle,
+  Loader,
+  X,
 } from "lucide-react";
 
 import AppShell from "../components/layout/AppShell";
+import Button from "../components/ui/Button";
 import Spinner from "../components/loading/Spinner";
 import SkeletonCard from "../components/loading/SkeletonCard";
 import { apiClient } from "../api/client";
 import { supabase } from "../supabase/client";
 import { relativeTime } from "../utils/relativeTime";
+
+/* ─── Queue item statuses (reused from Evidence module pattern) ─── */
+const QUEUE_STATUS = {
+  PENDING: "pending",
+  ANALYZING: "analyzing",
+  SUCCESS: "success",
+  FAILED: "failed",
+};
+
+function queueStatusLabel(status) {
+  switch (status) {
+    case QUEUE_STATUS.PENDING:
+      return "Selected";
+    case QUEUE_STATUS.ANALYZING:
+      return "Analysing…";
+    case QUEUE_STATUS.SUCCESS:
+      return "Completed";
+    case QUEUE_STATUS.FAILED:
+      return "Failed";
+    default:
+      return "";
+  }
+}
+
+function queueStatusColor(status) {
+  if (status === QUEUE_STATUS.SUCCESS) return "var(--success)";
+  if (status === QUEUE_STATUS.FAILED) return "var(--danger)";
+  return "var(--accent)";
+}
+
+function readPersistedQueue(caseId) {
+  if (!caseId) return [];
+  try {
+    const raw = localStorage.getItem(`forensiq_witness_queue_${caseId}`);
+    const parsed = JSON.parse(raw || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistQueue(caseId, queueItems) {
+  if (!caseId) return;
+  try {
+    localStorage.setItem(
+      `forensiq_witness_queue_${caseId}`,
+      JSON.stringify(queueItems)
+    );
+  } catch {
+    // Ignore storage quota issues.
+  }
+}
 
 /* ─── Entity type badge colors ─── */
 
@@ -69,11 +128,34 @@ export default function WitnessStatements() {
   const { caseId } = useParams();
   const navigate = useNavigate();
 
-  /* Form state */
+  /* Mode state: Option 1 (single) vs Option 2 (multi) */
+  const [inputOption, setInputOption] = useState("single"); // "single" | "multi"
+  const [singleSubMode, setSingleSubMode] = useState("paste"); // "paste" | "document"
+
+  /* Option 1A: Paste state */
   const [witnessLabel, setWitnessLabel] = useState("");
   const [rawText, setRawText] = useState("");
   const [sourceEvidenceId, setSourceEvidenceId] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+
+  /* Option 1B: Single document state */
+  const [singleDocLabel, setSingleDocLabel] = useState("");
+  const [singleFile, setSingleFile] = useState(null);
+  const [singleExtractedText, setSingleExtractedText] = useState("");
+  const [singleExtracting, setSingleExtracting] = useState(false);
+  const [singleDragging, setSingleDragging] = useState(false);
+  const singleInputRef = useRef(null);
+
+  /* Option 2: Multi-witness document state */
+  const [multiFile, setMultiFile] = useState(null);
+  const [multiParsing, setMultiParsing] = useState(false);
+  const [multiDragging, setMultiDragging] = useState(false);
+  const multiInputRef = useRef(null);
+
+  /* Queue state (persisted per case) */
+  const [queue, setQueue] = useState(() => readPersistedQueue(caseId));
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  /* Form & Queue status messages */
   const [formError, setFormError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
@@ -86,6 +168,11 @@ export default function WitnessStatements() {
 
   /* Expanded analysis panels */
   const [expandedAnalysis, setExpandedAnalysis] = useState({});
+
+  useEffect(() => {
+    if (!caseId) return;
+    persistQueue(caseId, queue);
+  }, [caseId, queue]);
 
   useEffect(() => {
     fetchStatements();
@@ -117,7 +204,85 @@ export default function WitnessStatements() {
     }
   }
 
-  async function handleSubmit(e) {
+  /* ── Queue processing engine (adapting Evidence pattern) ── */
+  const triggerProcessQueue = useCallback(
+    async (itemsToProcess) => {
+      if (!itemsToProcess || itemsToProcess.length === 0) return;
+      setIsProcessing(true);
+      setFormError("");
+
+      for (const item of itemsToProcess) {
+        // Set item to ANALYZING
+        setQueue((prev) =>
+          prev.map((q) =>
+            q.id === item.id ? { ...q, status: QUEUE_STATUS.ANALYZING } : q
+          )
+        );
+
+        try {
+          await apiClient(`/witness/cases/${caseId}/statements`, {
+            method: "POST",
+            body: JSON.stringify({
+              witness_label: item.witness_label,
+              raw_text: item.raw_text,
+              source_evidence_id: item.source_evidence_id,
+            }),
+          });
+
+          // Set item to SUCCESS
+          setQueue((prev) =>
+            prev.map((q) =>
+              q.id === item.id
+                ? { ...q, status: QUEUE_STATUS.SUCCESS, error: "" }
+                : q
+            )
+          );
+        } catch (err) {
+          // Set item to FAILED
+          setQueue((prev) =>
+            prev.map((q) =>
+              q.id === item.id
+                ? {
+                    ...q,
+                    status: QUEUE_STATUS.FAILED,
+                    error: err.message || "Analysis failed",
+                  }
+                : q
+            )
+          );
+        }
+      }
+
+      setIsProcessing(false);
+      fetchStatements();
+    },
+    [caseId]
+  );
+
+  async function handleProcessAllPending() {
+    const pendingItems = queue.filter(
+      (item) => item.status === QUEUE_STATUS.PENDING
+    );
+    if (pendingItems.length === 0) return;
+    await triggerProcessQueue(pendingItems);
+  }
+
+  function removeFromQueue(id) {
+    setQueue((prev) => prev.filter((item) => item.id !== id));
+  }
+
+  function clearCompleted() {
+    setQueue((prev) =>
+      prev.filter(
+        (item) =>
+          item.status !== QUEUE_STATUS.SUCCESS &&
+          item.status !== QUEUE_STATUS.FAILED
+      )
+    );
+  }
+
+  /* ── Option 1A: Paste statement submit ── */
+  async function handleSubmitPasted(e) {
     e.preventDefault();
     setFormError("");
     setSuccessMsg("");
@@ -135,32 +300,154 @@ export default function WitnessStatements() {
       return;
     }
 
-    setSubmitting(true);
+    const newItem = {
+      id: `witness-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      witness_label: witnessLabel.trim(),
+      raw_text: rawText.trim(),
+      source_evidence_id: sourceEvidenceId || undefined,
+      source_name: "Direct Entry",
+      status: QUEUE_STATUS.PENDING,
+      error: "",
+    };
+
+    setWitnessLabel("");
+    setRawText("");
+    setSourceEvidenceId("");
+    setQueue((prev) => [...prev, newItem]);
+    setSuccessMsg("Statement added to processing queue.");
+    setTimeout(() => setSuccessMsg(""), 3000);
+
+    triggerProcessQueue([newItem]);
+  }
+
+  /* ── Option 1B: Single document extract & queue ── */
+  async function handleSingleFileSelected(selectedFile) {
+    if (!selectedFile) return;
+    setSingleFile(selectedFile);
+    setFormError("");
+    setSingleExtracting(true);
 
     try {
-      const body = {
-        witness_label: witnessLabel,
-        raw_text: rawText,
-      };
-      if (sourceEvidenceId) {
-        body.source_evidence_id = sourceEvidenceId;
-      }
+      const formData = new FormData();
+      formData.append("file", selectedFile);
 
-      await apiClient(`/witness/cases/${caseId}/statements`, {
+      const res = await apiClient(`/witness/cases/${caseId}/extract-text`, {
         method: "POST",
-        body: JSON.stringify(body),
+        body: formData,
       });
 
-      setWitnessLabel("");
-      setRawText("");
-      setSourceEvidenceId("");
-      setSuccessMsg("Statement analyzed and saved.");
-      setTimeout(() => setSuccessMsg(""), 3000);
-      fetchStatements();
+      setSingleExtractedText(res.statement_text || "");
+      if (!singleDocLabel && res.suggested_label) {
+        setSingleDocLabel(res.suggested_label);
+      }
     } catch (err) {
-      setFormError(err.message || "Failed to analyze statement.");
+      setFormError(err.message || "Failed to extract text from document.");
+      setSingleFile(null);
     } finally {
-      setSubmitting(false);
+      setSingleExtracting(false);
+    }
+  }
+
+  async function handleSubmitSingleDoc(e) {
+    e.preventDefault();
+    setFormError("");
+    setSuccessMsg("");
+
+    if (!singleDocLabel.trim()) {
+      setFormError("Witness label is required.");
+      return;
+    }
+    if (!singleExtractedText.trim()) {
+      setFormError("Document statement is empty or not yet extracted.");
+      return;
+    }
+    if (singleExtractedText.trim().length < 10) {
+      setFormError("Extracted statement is too short to analyze.");
+      return;
+    }
+
+    const newItem = {
+      id: `witness-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      witness_label: singleDocLabel.trim(),
+      raw_text: singleExtractedText.trim(),
+      source_name: singleFile ? singleFile.name : "Single Document",
+      status: QUEUE_STATUS.PENDING,
+      error: "",
+    };
+
+    setSingleDocLabel("");
+    setSingleExtractedText("");
+    setSingleFile(null);
+    setQueue((prev) => [...prev, newItem]);
+    setSuccessMsg("Document statement added to processing queue.");
+    setTimeout(() => setSuccessMsg(""), 3000);
+
+    triggerProcessQueue([newItem]);
+  }
+
+  /* ── Option 2: Multi-witness document parsing & queue ── */
+  async function handleMultiFileSelected(selectedFile) {
+    if (!selectedFile) return;
+    setMultiFile(selectedFile);
+    setFormError("");
+  }
+
+  async function handleParseMultiDocument(e) {
+    e.preventDefault();
+    if (!multiFile) {
+      setFormError("Please select a document first.");
+      return;
+    }
+
+    setMultiParsing(true);
+    setFormError("");
+    setSuccessMsg("");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", multiFile);
+
+      const res = await apiClient(`/witness/cases/${caseId}/parse-document`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.witnesses || res.witnesses.length === 0) {
+        setFormError(
+          "No recognizable 'Witness Name:' and 'Witness Statement:' pairs found in document."
+        );
+        return;
+      }
+
+      const newItems = res.witnesses.map((w, idx) => ({
+        id: `witness-${Date.now()}-${idx}-${Math.random()
+          .toString(36)
+          .substring(2, 7)}`,
+        witness_label: w.witness_label,
+        raw_text: w.raw_text,
+        source_name: multiFile.name,
+        status: w.valid ? QUEUE_STATUS.PENDING : QUEUE_STATUS.FAILED,
+        error: w.error || (w.valid ? "" : "Invalid witness statement"),
+      }));
+
+      setQueue((prev) => [...prev, ...newItems]);
+      const fileRef = multiFile.name;
+      setMultiFile(null);
+      setSuccessMsg(
+        `Extracted ${res.total_found} witness statement(s) from "${fileRef}".`
+      );
+      setTimeout(() => setSuccessMsg(""), 4000);
+
+      const validItems = newItems.filter(
+        (i) => i.status === QUEUE_STATUS.PENDING
+      );
+      if (validItems.length > 0) {
+        triggerProcessQueue(validItems);
+      }
+    } catch (err) {
+      setFormError(err.message || "Failed to parse multi-witness document.");
+    } finally {
+      setMultiParsing(false);
     }
   }
 
@@ -308,19 +595,25 @@ export default function WitnessStatements() {
           })}
         </div>
 
-        {/* Statement preview */}
-        <p
+        {/* Complete original statement */}
+        <div
           style={{
             fontSize: "14px",
-            color: "var(--text-secondary)",
+            color: "var(--text-primary)",
             lineHeight: 1.6,
-            marginBottom: "12px",
+            marginBottom: "14px",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            maxHeight: "320px",
+            overflowY: "auto",
+            padding: "12px 14px",
+            background: "var(--bg-muted)",
+            borderRadius: "var(--radius-sm)",
+            border: "1px solid var(--border)",
           }}
         >
-          {statement.raw_text.length > 150
-            ? statement.raw_text.slice(0, 150) + "..."
-            : statement.raw_text}
-        </p>
+          {statement.raw_text}
+        </div>
 
         {/* Bottom row flags */}
         <div
@@ -623,6 +916,44 @@ export default function WitnessStatements() {
     );
   }
 
+  const pendingCount = queue.filter(
+    (item) => item.status === QUEUE_STATUS.PENDING
+  ).length;
+  const hasCompletedOrFailed = queue.some(
+    (item) =>
+      item.status === QUEUE_STATUS.SUCCESS || item.status === QUEUE_STATUS.FAILED
+  );
+
+  function onSingleDrop(e) {
+    e.preventDefault();
+    setSingleDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleSingleFileSelected(e.dataTransfer.files[0]);
+    }
+  }
+
+  function onSingleBrowse(e) {
+    if (e.target.files && e.target.files.length > 0) {
+      handleSingleFileSelected(e.target.files[0]);
+    }
+    e.target.value = "";
+  }
+
+  function onMultiDrop(e) {
+    e.preventDefault();
+    setMultiDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleMultiFileSelected(e.dataTransfer.files[0]);
+    }
+  }
+
+  function onMultiBrowse(e) {
+    if (e.target.files && e.target.files.length > 0) {
+      handleMultiFileSelected(e.target.files[0]);
+    }
+    e.target.value = "";
+  }
+
   /* ─── Render ─── */
 
   return (
@@ -676,141 +1007,658 @@ export default function WitnessStatements() {
           </span>
         </div>
 
-        {/* ─── Add Statement Form ─── */}
-        <div style={{ ...cardStyle, marginBottom: "32px" }}>
-          <h2
+        {/* ─── Add Statement Workflow (Options 1 & 2) ─── */}
+        <div style={{ ...cardStyle, marginBottom: "28px" }}>
+          {/* Main Mode Tabs */}
+          <div
             style={{
-              fontFamily: "'Space Grotesk', sans-serif",
-              fontWeight: 600,
-              fontSize: "16px",
+              display: "flex",
+              borderBottom: "1px solid var(--border)",
               marginBottom: "20px",
+              gap: "12px",
             }}
           >
-            Add New Statement
-          </h2>
-
-          <form onSubmit={handleSubmit}>
-            {/* Witness Label */}
-            <div style={{ marginBottom: "16px" }}>
-              <label style={labelStyle}>Witness Label *</label>
-              <input
-                type="text"
-                value={witnessLabel}
-                onChange={(e) => setWitnessLabel(e.target.value)}
-                placeholder="e.g. Witness A, John D., Security Guard"
-                required
-                maxLength={100}
-                style={inputStyle}
-              />
-              <span
-                style={{
-                  fontSize: "11px",
-                  color: "var(--text-muted)",
-                  marginTop: "4px",
-                  display: "block",
-                }}
-              >
-                Use a label or pseudonym — avoid real names in labels
-              </span>
-            </div>
-
-            {/* Statement Text */}
-            <div style={{ marginBottom: "16px" }}>
-              <label style={labelStyle}>Statement Text *</label>
-              <textarea
-                value={rawText}
-                onChange={(e) => setRawText(e.target.value)}
-                placeholder="Enter the full witness statement here..."
-                required
-                rows={8}
-                style={{
-                  ...inputStyle,
-                  resize: "vertical",
-                  lineHeight: 1.6,
-                }}
-              />
-              <span
-                style={{
-                  fontSize: "11px",
-                  color:
-                    rawText.length > 45000
-                      ? "var(--danger)"
-                      : "var(--text-muted)",
-                  marginTop: "4px",
-                  display: "block",
-                  ...monoStyle,
-                }}
-              >
-                {rawText.length} / 50000 characters
-              </span>
-            </div>
-
-            {/* Evidence Dropdown */}
-            <div style={{ marginBottom: "20px" }}>
-              <label style={labelStyle}>
-                Link to uploaded document (optional)
-              </label>
-              <select
-                value={sourceEvidenceId}
-                onChange={(e) => setSourceEvidenceId(e.target.value)}
-                style={inputStyle}
-              >
-                <option value="">— None —</option>
-                {evidenceList.map((ev) => (
-                  <option key={ev.id} value={ev.id}>
-                    {ev.filename}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Submit */}
             <button
-              type="submit"
-              disabled={submitting || !witnessLabel.trim() || !rawText.trim()}
+              type="button"
+              onClick={() => {
+                setInputOption("single");
+                setFormError("");
+              }}
               style={{
-                background: "var(--accent)",
-                color: "#fff",
+                background: "transparent",
                 border: "none",
-                borderRadius: "var(--radius-sm)",
-                padding: "10px 24px",
+                borderBottom:
+                  inputOption === "single"
+                    ? "2px solid var(--accent)"
+                    : "2px solid transparent",
+                color:
+                  inputOption === "single"
+                    ? "var(--accent)"
+                    : "var(--text-secondary)",
+                padding: "10px 16px",
                 fontSize: "14px",
                 fontWeight: 600,
-                cursor: submitting ? "not-allowed" : "pointer",
-                opacity: submitting ? 0.7 : 1,
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
+                cursor: "pointer",
+                transition: "0.2s",
               }}
             >
-              {submitting && <Spinner size={14} />}
-              {submitting ? "Analyzing..." : "Analyze Statement"}
+              Single Witness Statement
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setInputOption("multi");
+                setFormError("");
+              }}
+              style={{
+                background: "transparent",
+                border: "none",
+                borderBottom:
+                  inputOption === "multi"
+                    ? "2px solid var(--accent)"
+                    : "2px solid transparent",
+                color:
+                  inputOption === "multi"
+                    ? "var(--accent)"
+                    : "var(--text-secondary)",
+                padding: "10px 16px",
+                fontSize: "14px",
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "0.2s",
+              }}
+            >
+              Multi-Witness Document
+            </button>
+          </div>
 
-            {formError && (
-              <p
+          {/* ── OPTION 1: SINGLE WITNESS STATEMENT ── */}
+          {inputOption === "single" && (
+            <div>
+              {/* Sub-selector: Paste/Type vs Upload Document */}
+              <div
                 style={{
-                  marginTop: "12px",
-                  fontSize: "13px",
-                  color: "var(--danger)",
+                  display: "flex",
+                  gap: "24px",
+                  marginBottom: "20px",
+                  paddingBottom: "14px",
+                  borderBottom: "1px dashed var(--border)",
                 }}
               >
-                {formError}
-              </p>
-            )}
-            {successMsg && (
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: singleSubMode === "paste" ? 600 : 400,
+                    color:
+                      singleSubMode === "paste"
+                        ? "var(--text-primary)"
+                        : "var(--text-secondary)",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="singleSubMode"
+                    checked={singleSubMode === "paste"}
+                    onChange={() => {
+                      setSingleSubMode("paste");
+                      setFormError("");
+                    }}
+                  />
+                  Paste / Type Statement Directly
+                </label>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: singleSubMode === "document" ? 600 : 400,
+                    color:
+                      singleSubMode === "document"
+                        ? "var(--text-primary)"
+                        : "var(--text-secondary)",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="singleSubMode"
+                    checked={singleSubMode === "document"}
+                    onChange={() => {
+                      setSingleSubMode("document");
+                      setFormError("");
+                    }}
+                  />
+                  Upload Document (Single Witness)
+                </label>
+              </div>
+
+              {/* Sub-mode A: Paste / Type */}
+              {singleSubMode === "paste" && (
+                <form onSubmit={handleSubmitPasted}>
+                  <div style={{ marginBottom: "16px" }}>
+                    <label style={labelStyle}>Witness Name / Label *</label>
+                    <input
+                      type="text"
+                      value={witnessLabel}
+                      onChange={(e) => setWitnessLabel(e.target.value)}
+                      placeholder="e.g. Traffic Police, Abhi, Security Guard"
+                      required
+                      maxLength={100}
+                      style={inputStyle}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: "20px" }}>
+                    <label style={labelStyle}>Statement Text *</label>
+                    <textarea
+                      value={rawText}
+                      onChange={(e) => setRawText(e.target.value)}
+                      placeholder="Enter the full witness statement here..."
+                      required
+                      rows={6}
+                      style={{
+                        ...inputStyle,
+                        resize: "vertical",
+                        lineHeight: 1.6,
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        color:
+                          rawText.length > 45000
+                            ? "var(--danger)"
+                            : "var(--text-muted)",
+                        marginTop: "4px",
+                        display: "block",
+                        ...monoStyle,
+                      }}
+                    >
+                      {rawText.length} / 50000 characters
+                    </span>
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={
+                      !witnessLabel.trim() ||
+                      !rawText.trim() ||
+                      rawText.trim().length < 10
+                    }
+                  >
+                    Add Statement to Queue
+                  </Button>
+                </form>
+              )}
+
+              {/* Sub-mode B: Upload Document */}
+              {singleSubMode === "document" && (
+                <form onSubmit={handleSubmitSingleDoc}>
+                  <div style={{ marginBottom: "16px" }}>
+                    <label style={labelStyle}>Witness Name / Label *</label>
+                    <input
+                      type="text"
+                      value={singleDocLabel}
+                      onChange={(e) => setSingleDocLabel(e.target.value)}
+                      placeholder="e.g. Traffic Police, Dr. Ramesh (or auto-suggested from document)"
+                      required
+                      maxLength={100}
+                      style={inputStyle}
+                    />
+                  </div>
+
+                  <input
+                    ref={singleInputRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx,.txt"
+                    hidden
+                    onChange={onSingleBrowse}
+                  />
+
+                  <div
+                    onClick={() =>
+                      !singleExtracting && singleInputRef.current.click()
+                    }
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setSingleDragging(true);
+                    }}
+                    onDragLeave={() => setSingleDragging(false)}
+                    onDrop={onSingleDrop}
+                    style={{
+                      border: singleDragging
+                        ? "2px solid var(--accent)"
+                        : "2px dashed var(--border)",
+                      background: "var(--bg-muted)",
+                      padding: "32px 20px",
+                      textAlign: "center",
+                      borderRadius: "10px",
+                      cursor: singleExtracting ? "wait" : "pointer",
+                      transition: "0.2s",
+                      marginBottom: "18px",
+                    }}
+                  >
+                    <UploadCloud size={36} color="var(--text-secondary)" />
+                    <div
+                      style={{
+                        marginTop: "10px",
+                        fontSize: "14px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {singleFile
+                        ? singleFile.name
+                        : "Click to browse or drag & drop single witness document"}
+                    </div>
+                    <p
+                      style={{
+                        fontSize: "12px",
+                        color: "var(--text-muted)",
+                        marginTop: "4px",
+                      }}
+                    >
+                      PDF, DOC, DOCX, or TXT representing ONE witness statement
+                    </p>
+                    {singleExtracting && (
+                      <div
+                        style={{
+                          marginTop: "10px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: "8px",
+                          color: "var(--accent)",
+                          fontSize: "13px",
+                        }}
+                      >
+                        <Spinner size={14} /> Extracting statement text…
+                      </div>
+                    )}
+                  </div>
+
+                  {singleExtractedText && (
+                    <div style={{ marginBottom: "18px" }}>
+                      <label style={labelStyle}>
+                        Extracted Statement Text (complete)
+                      </label>
+                      <textarea
+                        value={singleExtractedText}
+                        onChange={(e) => setSingleExtractedText(e.target.value)}
+                        rows={6}
+                        style={{
+                          ...inputStyle,
+                          resize: "vertical",
+                          lineHeight: 1.6,
+                        }}
+                      />
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          color: "var(--text-muted)",
+                          marginTop: "4px",
+                          display: "block",
+                          ...monoStyle,
+                        }}
+                      >
+                        {singleExtractedText.length} characters extracted
+                      </span>
+                    </div>
+                  )}
+
+                  <Button
+                    type="submit"
+                    disabled={
+                      !singleDocLabel.trim() ||
+                      !singleExtractedText.trim() ||
+                      singleExtracting
+                    }
+                  >
+                    Add Document Statement to Queue
+                  </Button>
+                </form>
+              )}
+            </div>
+          )}
+
+          {/* ── OPTION 2: MULTI-WITNESS DOCUMENT ── */}
+          {inputOption === "multi" && (
+            <form onSubmit={handleParseMultiDocument}>
               <p
                 style={{
-                  marginTop: "12px",
                   fontSize: "13px",
-                  color: "var(--success)",
+                  color: "var(--text-secondary)",
+                  marginBottom: "16px",
+                  lineHeight: 1.5,
                 }}
               >
-                {successMsg}
+                Upload one PDF, DOC/DOCX, or TXT document containing multiple
+                witness statements labeled with <code>Witness Name:</code> and{" "}
+                <code>Witness Statement:</code>. The parser will split the
+                document and queue each statement independently for NLP analysis.
               </p>
-            )}
-          </form>
+
+              <input
+                ref={multiInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.txt"
+                hidden
+                onChange={onMultiBrowse}
+              />
+
+              <div
+                onClick={() =>
+                  !multiParsing && multiInputRef.current.click()
+                }
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setMultiDragging(true);
+                }}
+                onDragLeave={() => setMultiDragging(false)}
+                onDrop={onMultiDrop}
+                style={{
+                  border: multiDragging
+                    ? "2px solid var(--accent)"
+                    : "2px dashed var(--border)",
+                  background: "var(--bg-muted)",
+                  padding: "40px 20px",
+                  textAlign: "center",
+                  borderRadius: "10px",
+                  cursor: multiParsing ? "wait" : "pointer",
+                  transition: "0.2s",
+                  marginBottom: "20px",
+                }}
+              >
+                <UploadCloud size={40} color="var(--text-secondary)" />
+                <div
+                  style={{
+                    marginTop: "12px",
+                    fontSize: "15px",
+                    fontWeight: 600,
+                  }}
+                >
+                  {multiFile
+                    ? multiFile.name
+                    : "Drag & Drop multi-witness document here, or click to browse"}
+                </div>
+                <p
+                  style={{
+                    fontSize: "12px",
+                    color: "var(--text-muted)",
+                    marginTop: "6px",
+                  }}
+                >
+                  Supports PDF, DOC, DOCX, TXT • Optional case metadata at start
+                  is automatically ignored
+                </p>
+                {multiFile && (
+                  <div
+                    style={{
+                      marginTop: "10px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "4px 12px",
+                      borderRadius: "999px",
+                      background: "rgba(37,99,235,.10)",
+                      color: "var(--accent)",
+                      fontSize: "12px",
+                      fontWeight: 500,
+                    }}
+                  >
+                    <FileText size={14} /> Ready to parse: {multiFile.name}
+                  </div>
+                )}
+              </div>
+
+              <Button type="submit" disabled={!multiFile || multiParsing}>
+                {multiParsing ? (
+                  <span
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <Spinner size={14} />
+                    Extracting & Splitting Witnesses…
+                  </span>
+                ) : (
+                  "Extract & Queue Witnesses"
+                )}
+              </Button>
+            </form>
+          )}
+
+          {/* Form error / success alerts */}
+          {formError && (
+            <div
+              style={{
+                marginTop: "16px",
+                padding: "12px 16px",
+                borderRadius: "8px",
+                background: "rgba(220,38,38,.10)",
+                color: "var(--danger)",
+                fontSize: "13px",
+                fontWeight: 500,
+              }}
+            >
+              {formError}
+            </div>
+          )}
+          {successMsg && (
+            <div
+              style={{
+                marginTop: "16px",
+                padding: "12px 16px",
+                borderRadius: "8px",
+                background: "rgba(34,197,94,.10)",
+                color: "var(--success)",
+                fontSize: "13px",
+                fontWeight: 500,
+              }}
+            >
+              {successMsg}
+            </div>
+          )}
         </div>
+
+        {/* ─── Processing Queue (Reusing Evidence Module Pattern) ─── */}
+        {queue.length > 0 && (
+          <div
+            style={{
+              marginBottom: "32px",
+              border: "1px solid var(--border)",
+              borderRadius: "12px",
+              background: "var(--bg-surface)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "14px 20px",
+                borderBottom: "1px solid var(--border)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <span style={{ fontWeight: 600, fontSize: "14px" }}>
+                Processing Queue ({queue.length})
+              </span>
+              <div style={{ display: "flex", gap: "12px" }}>
+                {hasCompletedOrFailed && (
+                  <button
+                    onClick={clearCompleted}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "var(--text-secondary)",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                    }}
+                  >
+                    Clear finished
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {queue.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "14px",
+                  padding: "12px 20px",
+                  borderBottom: "1px solid var(--border)",
+                }}
+              >
+                {/* Icon */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: "40px",
+                    height: "40px",
+                    borderRadius: "8px",
+                    background: "rgba(37,99,235,.08)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Users size={20} color="var(--accent)" />
+                </div>
+
+                {/* Info */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: "13px",
+                      color: "var(--text-primary)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {item.witness_label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "12px",
+                      color: "var(--text-secondary)",
+                      marginTop: "2px",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {item.raw_text
+                      ? item.raw_text.slice(0, 90) +
+                        (item.raw_text.length > 90 ? "…" : "")
+                      : "(No statement text)"}
+                  </div>
+                </div>
+
+                {/* Status badge */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    fontSize: "12px",
+                    fontFamily: "'JetBrains Mono', monospace",
+                    color: queueStatusColor(item.status),
+                    flexShrink: 0,
+                  }}
+                >
+                  {item.status === QUEUE_STATUS.SUCCESS && (
+                    <CheckCircle size={14} />
+                  )}
+                  {item.status === QUEUE_STATUS.FAILED && <XCircle size={14} />}
+                  {item.status === QUEUE_STATUS.ANALYZING && (
+                    <Loader size={14} className="spin" />
+                  )}
+                  <span>{queueStatusLabel(item.status)}</span>
+                </div>
+
+                {/* Error message */}
+                {item.error && item.status === QUEUE_STATUS.FAILED && (
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      color: "var(--danger)",
+                      maxWidth: "160px",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={item.error}
+                  >
+                    {item.error}
+                  </span>
+                )}
+
+                {/* Remove button */}
+                {(item.status === QUEUE_STATUS.PENDING ||
+                  item.status === QUEUE_STATUS.FAILED) && (
+                  <button
+                    onClick={() => removeFromQueue(item.id)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "var(--text-muted)",
+                      padding: "4px",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+            ))}
+
+            {/* Bottom action button */}
+            {pendingCount > 0 && (
+              <div
+                style={{
+                  padding: "14px 20px",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                }}
+              >
+                <Button
+                  onClick={handleProcessAllPending}
+                  disabled={isProcessing}
+                >
+                  {isProcessing ? (
+                    <span
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      <Spinner size={14} />
+                      Analysing…
+                    </span>
+                  ) : (
+                    `Analyze ${pendingCount} Statement${
+                      pendingCount > 1 ? "s" : ""
+                    }`
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ─── Statements List ─── */}
         <div
@@ -866,6 +1714,13 @@ export default function WitnessStatements() {
           statements.length > 0 &&
           statements.map((s) => renderStatementCard(s))}
       </div>
+
+      {/* Spinner animation for Loader icon */}
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .spin { animation: spin 1s linear infinite; }
+      `}</style>
     </AppShell>
   );
 }
+

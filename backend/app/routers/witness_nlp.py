@@ -1,12 +1,19 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional
 from app.core.supabase import get_supabase_client
 from app.services.witness_nlp.ner import extract_entities
 from app.services.witness_nlp.temporal import extract_temporal_sequence
 from app.services.witness_nlp.hedge_detector import detect_hedge_markers
+from app.services.witness_nlp.document_parser import (
+    parse_multi_witness_document,
+    extract_single_witness_text,
+)
+from app.services.doc_metadata.text_extractor import extract_text
 from app.services.activity_logger import log_activity
 from datetime import datetime, timezone
+import os
+import tempfile
 import logging
 
 logger = logging.getLogger(__name__)
@@ -281,3 +288,104 @@ async def delete_statement(case_id: str, statement_id: str):
         )
 
     return {"success": True}
+
+
+@router.post("/cases/{case_id}/parse-document")
+async def parse_document(case_id: str, file: UploadFile = File(...)):
+    """
+    Accepts an uploaded document (PDF, DOCX, DOC, TXT), extracts full text,
+    and deterministically splits it into individual witness statements.
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
+
+    suffix = os.path.splitext(file.filename)[1].lower()
+    allowed_extensions = {".pdf", ".docx", ".doc", ".txt"}
+    if suffix not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file format '{suffix}'. Allowed formats: PDF, DOC, DOCX, TXT."
+        )
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        mime_type = file.content_type or ""
+        text_result = extract_text(tmp_path, mime_type)
+        extracted_text = text_result.get("text", "")
+
+        if not extracted_text or not extracted_text.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Could not extract text from document or document is empty."
+            )
+
+        entries = parse_multi_witness_document(extracted_text)
+
+        if not entries:
+            raise HTTPException(
+                status_code=400,
+                detail="No recognizable 'Witness Name:' and 'Witness Statement:' pairs found in document."
+            )
+
+        return {
+            "filename": file.filename,
+            "total_found": len(entries),
+            "valid_count": sum(1 for e in entries if e["valid"]),
+            "witnesses": entries,
+        }
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+@router.post("/cases/{case_id}/extract-text")
+async def extract_single_text(case_id: str, file: UploadFile = File(...)):
+    """
+    Accepts an uploaded document representing a single witness (PDF, DOCX, DOC, TXT),
+    extracts the complete text, and extracts/suggests statement and witness name.
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
+
+    suffix = os.path.splitext(file.filename)[1].lower()
+    allowed_extensions = {".pdf", ".docx", ".doc", ".txt"}
+    if suffix not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file format '{suffix}'. Allowed formats: PDF, DOC, DOCX, TXT."
+        )
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        mime_type = file.content_type or ""
+        text_result = extract_text(tmp_path, mime_type)
+        extracted_text = text_result.get("text", "")
+
+        if not extracted_text or not extracted_text.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Could not extract text from document or document is empty."
+            )
+
+        single_res = extract_single_witness_text(extracted_text)
+
+        return {
+            "filename": file.filename,
+            "char_count": len(single_res["raw_text"]),
+            "statement_text": single_res["raw_text"],
+            "suggested_label": single_res["witness_label"],
+        }
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+

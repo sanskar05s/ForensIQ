@@ -275,7 +275,7 @@ export default function EvidenceDetail() {
         <div style={{ padding: "40px" }}>
           <h2>{error || "Evidence not found."}</h2>
           <button
-            onClick={() => navigate(`/cases/${caseId}`)}
+            onClick={() => navigate(`/cases/${caseId}/evidence`)}
             style={{
               marginTop: "16px",
               background: "transparent",
@@ -284,7 +284,7 @@ export default function EvidenceDetail() {
               cursor: "pointer",
             }}
           >
-            ← Back to Case
+            ← Back to Evidence
           </button>
         </div>
       </AppShell>
@@ -1031,7 +1031,7 @@ export default function EvidenceDetail() {
       <div style={{ maxWidth: "960px", margin: "0 auto" }}>
         {/* Header */}
         <button
-          onClick={() => navigate(`/cases/${caseId}`)}
+          onClick={() => navigate(`/cases/${caseId}/evidence`)}
           style={{
             background: "transparent",
             border: "none",
@@ -1045,7 +1045,7 @@ export default function EvidenceDetail() {
           }}
         >
           <ArrowLeft size={16} />
-          Back to Case
+          Back to Evidence
         </button>
 
         <h1

@@ -107,11 +107,13 @@ def extract_text(file_path: str, mime_type: str) -> dict:
     On failure returns: {text: "", method: "failed", error: str}
     """
     try:
-        if "pdf" in mime_type:
+        import os
+        ext = os.path.splitext(file_path)[1].lower()
+        if "pdf" in mime_type or ext == ".pdf":
             return extract_from_pdf(file_path)
-        elif "wordprocessingml" in mime_type or "msword" in mime_type:
+        elif "wordprocessingml" in mime_type or "msword" in mime_type or ext in (".docx", ".doc"):
             return extract_from_docx(file_path)
-        elif "text/plain" in mime_type:
+        elif "text/plain" in mime_type or ext == ".txt":
             return extract_from_text(file_path)
         else:
             # Unknown document type — attempt OCR as last resort
