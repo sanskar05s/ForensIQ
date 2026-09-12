@@ -1,3 +1,4 @@
+from typing import Optional
 import re
 
 # Relative temporal markers mapped to ordering hints
@@ -28,6 +29,67 @@ RELATIVE_MARKERS = {
     "at that point": 5,
 }
 
+_TIME_PATTERNS = [
+    # HH:MM AM/PM
+    (re.compile(r'\b(\d{1,2}):(\d{2})\s*(am|pm)\b', re.I),
+     lambda m: (int(m.group(1)) % 12 + (12 if m.group(3).lower() == 'pm' else 0),
+                int(m.group(2)))),
+    # H AM/PM (no minutes)
+    (re.compile(r'\b(\d{1,2})\s*(am|pm)\b', re.I),
+     lambda m: (int(m.group(1)) % 12 + (12 if m.group(2).lower() == 'pm' else 0),
+                0)),
+    # HH:MM 24-hour
+    (re.compile(r'\b([01]?\d|2[0-3]):([0-5]\d)\b'),
+     lambda m: (int(m.group(1)), int(m.group(2)))),
+]
+
+_WORD_TIMES = {
+    "midnight":   "00:00",
+    "noon":       "12:00",
+    "midday":     "12:00",
+    "morning":    "08:00",
+    "afternoon":  "14:00",
+    "evening":    "19:00",
+    "night":      "21:00",
+}
+
+
+def _normalize_time(raw: str) -> Optional[str]:
+    """
+    Converts a raw time string to normalized 24-hour HH:MM format.
+    Returns None if no parseable time found.
+
+    Examples:
+        "8:30 PM"      → "20:30"
+        "9 AM"         → "09:00"
+        "midnight"     → "00:00"
+        "around 9 PM"  → "21:00"
+        "21:15"        → "21:15"
+    """
+    if not raw:
+        return None
+
+    lower = raw.lower().strip()
+
+    # Word-based times
+    for word, normalized in _WORD_TIMES.items():
+        if word in lower:
+            return normalized
+
+    # Regex-based times
+    for pattern, extractor in _TIME_PATTERNS:
+        m = pattern.search(lower)
+        if m:
+            try:
+                h, minute = extractor(m)
+                h = max(0, min(23, h))
+                minute = max(0, min(59, minute))
+                return f"{h:02d}:{minute:02d}"
+            except (ValueError, TypeError):
+                continue
+
+    return None
+
 
 def _marker_in_text(marker: str, text: str) -> bool:
     """
@@ -52,9 +114,9 @@ def extract_temporal_sequence(text: str, entities: list) -> list:
     Returns list of:
     {event_text, relative_order, absolute_time, marker_type, marker_word}
     """
-    # Build set of time entity strings for quick lookup
-    time_entity_texts = {
-        e["text"].lower() for e in entities if e["type"] == "TIME"
+    # Build mapping of time entity strings for quick lookup (preserving original casing)
+    time_entity_map = {
+        e["text"].lower(): e["text"] for e in entities if e.get("type") == "TIME"
     }
 
     # Split into sentences on . ! ? — preserve non-empty sentences
@@ -83,19 +145,34 @@ def extract_temporal_sequence(text: str, entities: list) -> list:
 
         # Check for time entities in this sentence
         absolute_time = None
-        for time_text in time_entity_texts:
-            if time_text in lower:
-                absolute_time = time_text
+        for time_key, original_time in time_entity_map.items():
+            if time_key in lower:
+                absolute_time = original_time
                 break
+
+        # Fallback check if time pattern exists in sentence
+        if not absolute_time:
+            for pattern, _ in _TIME_PATTERNS:
+                m = pattern.search(sentence)
+                if m:
+                    absolute_time = m.group(0)
+                    break
+            if not absolute_time:
+                for word in _WORD_TIMES:
+                    if _marker_in_text(word, lower):
+                        absolute_time = word
+                        break
 
         # Only include if temporally relevant
         if marker_found or absolute_time:
+            normalized = _normalize_time(absolute_time) if absolute_time else None
             sequence.append(
                 {
                     "event_text": sentence,
                     "relative_order": marker_order,
                     "absolute_time": absolute_time,
-                    "marker_type": "relative" if marker_found else "absolute",
+                    "absolute_time_normalized": normalized,
+                    "marker_type": "absolute" if absolute_time else "relative",
                     "marker_word": marker_found,
                 }
             )
