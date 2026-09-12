@@ -145,9 +145,103 @@ def extract_time_claims(text: str) -> List[Dict]:
     return claims
 
 
+def _parse_time_to_hours(time_str: str) -> Optional[float]:
+    """
+    Converts time string to decimal hours for minute-aware comparison.
+    "8:30 PM"  → 20.5
+    "8:10 PM"  → 20.167
+    "9 AM"     → 9.0
+    "midnight" → 0.0
+    Returns None if unparseable.
+    """
+    if not time_str:
+        return None
+    lower = time_str.lower().strip()
+
+    # Word-based times → exact decimal hours
+    WORD_HOURS = {
+        'midnight': 0.0,  'noon': 12.0, 'midday': 12.0,
+        'morning':  8.0,  'afternoon': 14.0,
+        'evening':  19.0, 'night': 21.0,
+    }
+    for word, val in WORD_HOURS.items():
+        if word in lower:
+            return val
+
+    # Ambiguous time without AM/PM — skip to avoid false positives
+    has_ampm = 'am' in lower or 'pm' in lower
+    has_24h = bool(re.search(r'\b([01]?\d|2[0-3]):\d{2}\b', lower))
+    if not has_ampm and not has_24h:
+        return None
+
+    # HH:MM AM/PM
+    m = re.search(r'(\d{1,2}):(\d{2})\s*(am|pm)', lower)
+    if m:
+        h, minute = int(m.group(1)), int(m.group(2))
+        am_pm = m.group(3)
+        if am_pm == 'pm' and h != 12:
+            h += 12
+        elif am_pm == 'am' and h == 12:
+            h = 0
+        return h + minute / 60.0
+
+    # HH:MM 24-hour
+    m = re.search(r'\b([01]?\d|2[0-3]):(\d{2})\b', lower)
+    if m:
+        return int(m.group(1)) + int(m.group(2)) / 60.0
+
+    # H AM/PM only (no minutes)
+    m = re.search(r'(\d{1,2})\s*(am|pm)', lower)
+    if m:
+        h = int(m.group(1))
+        am_pm = m.group(2)
+        if am_pm == 'pm' and h != 12:
+            h += 12
+        elif am_pm == 'am' and h == 12:
+            h = 0
+        return float(h)
+
+    return None
+
+
+def _extract_color_context(sentence: str, color: str) -> str:
+    """
+    Extracts what object a color describes in a sentence.
+    Handles both:
+      - Forward: "a black car"  → "car"
+      - Backward: "the car was black" → "car"
+    """
+    lower = sentence.lower()
+    idx = lower.find(color)
+    if idx == -1:
+        return ""
+
+    # Forward: word immediately after color
+    after = lower[idx + len(color):].strip().split()
+    if after:
+        candidate = after[0].rstrip(".,;:!?")
+        if candidate in {"colored", "coloured"} and len(after) > 1:
+            candidate = after[1].rstrip(".,;:!?")
+        if len(candidate) > 2 and candidate not in {"a", "an", "the", "and", "or"}:
+            return candidate
+
+    # Backward: last noun before color (for "the car was black" syntax)
+    before = lower[:idx].strip().split()
+    for word in reversed(before[-4:]):   # look back at most 4 words
+        word = word.rstrip(".,;:!?")
+        if len(word) > 2 and word not in {
+            "a", "an", "the", "was", "is", "were", "are", "had", "has", "and", "or", "it",
+            "clearly", "obviously", "definitely", "apparently", "very", "quite", "really",
+            "mostly", "partially", "so", "too"
+        }:
+            return word
+
+    return ""
+
+
 def extract_color_claims(text: str) -> List[Dict]:
     """
-    Returns list of {sentence, color, context_word} for sentences
+    Returns list of {sentence, color, context} for sentences
     containing color + nearby noun.
     """
     claims = []
@@ -156,9 +250,7 @@ def extract_color_claims(text: str) -> List[Dict]:
         for color in COLOR_WORDS:
             pattern = rf'\b{re.escape(color)}\b'
             if re.search(pattern, lower):
-                # Extract the word immediately after the color as context
-                match = re.search(rf'\b{re.escape(color)}\s+(\w+)', lower)
-                context = match.group(1) if match else ""
+                context = _extract_color_context(sentence, color)
                 claims.append({
                     "sentence": sentence,
                     "extracted_value": color,

@@ -1,6 +1,6 @@
 import re
 from typing import List, Dict, Optional
-from app.services.contradiction.claim_extractor import extract_all_claims, _normalize_count
+from app.services.contradiction.claim_extractor import extract_all_claims, _normalize_count, _parse_time_to_hours
 
 # Opposite direction pairs
 OPPOSITE_DIRECTIONS = {
@@ -13,7 +13,49 @@ OPPOSITE_DIRECTIONS = {
     frozenset(['inside', 'outside']),
 }
 
-# Time normalization map
+# Synonym groups for color context matching.
+# If context_a and context_b are in the SAME synonym group,
+# treat them as matching even if the exact words differ.
+VEHICLE_SYNONYMS = frozenset([
+    "car", "vehicle", "van", "truck", "auto", "automobile",
+    "motorcycle", "motorbike", "bike", "scooter", "cab", "taxi",
+    "suv", "sedan", "hatchback", "lorry", "bus", "jeep",
+])
+BAG_SYNONYMS = frozenset([
+    "bag", "backpack", "sack", "pouch", "luggage", "suitcase",
+    "handbag", "purse", "kit",
+])
+PERSON_SYNONYMS = frozenset([
+    "man", "woman", "person", "individual", "suspect", "attacker",
+    "robber", "officer", "guard", "victim", "pedestrian",
+])
+
+
+def _synonym_group(word: str) -> Optional[frozenset]:
+    w = word.lower().strip()
+    if w in VEHICLE_SYNONYMS: return VEHICLE_SYNONYMS
+    if w in BAG_SYNONYMS:     return BAG_SYNONYMS
+    if w in PERSON_SYNONYMS:  return PERSON_SYNONYMS
+    return None
+
+
+def _contexts_match(ctx_a: str, ctx_b: str) -> bool:
+    """True if contexts refer to the same category of subject."""
+    if not ctx_a and not ctx_b:
+        return True   # both empty → both contextless, compare anyway
+    if not ctx_a or not ctx_b:
+        return False  # one has context, other doesn't → uncertain
+    if ctx_a.lower().strip() == ctx_b.lower().strip():
+        return True   # exact match
+    # Synonym match
+    group_a = _synonym_group(ctx_a)
+    group_b = _synonym_group(ctx_b)
+    if group_a and group_b and group_a is group_b:
+        return True
+    return False
+
+
+# Time normalization map (legacy reference)
 TIME_NORMALIZATION = {
     'midnight': 23.99,
     'morning': 9,
@@ -32,83 +74,73 @@ def normalize_time_value(time_str: str) -> Optional[int]:
     Converts a time string to an hour integer (0-23).
     Returns None if cannot normalize.
     """
-    lower = time_str.lower().strip()
-
-    # Check word-based times
-    for key, hour in TIME_NORMALIZATION.items():
-        if key in lower:
-            return hour
-
-    # Guard: skip ambiguous times without AM/PM or 24h format
-    has_ampm = 'am' in lower or 'pm' in lower
-    has_24h = bool(re.search(r'\b([01]?\d|2[0-3]):(\d{2})\b', lower))
-    if not has_ampm and not has_24h:
-        return None  # Ambiguous — skip to avoid false positives
-
-    # Parse HH:MM or HH am/pm formats
-    match_colon = re.search(r'(\d{1,2}):(\d{2})\s*(am|pm)?', lower)
-    if match_colon:
-        hour = int(match_colon.group(1))
-        am_pm = match_colon.group(3)
-        if am_pm == 'pm' and hour != 12:
-            hour += 12
-        elif am_pm == 'am' and hour == 12:
-            hour = 0
-        return hour
-
-    match_simple = re.search(r'(\d{1,2})\s*(am|pm)', lower)
-    if match_simple:
-        hour = int(match_simple.group(1))
-        am_pm = match_simple.group(2)
-        if am_pm == 'pm' and hour != 12:
-            hour += 12
-        elif am_pm == 'am' and hour == 12:
-            hour = 0
-        return hour
-
+    val = _parse_time_to_hours(time_str)
+    if val is not None:
+        return int(val)
     return None
 
 
 def check_time_contradiction(claims_a: List[Dict],
                               claims_b: List[Dict]) -> Optional[Dict]:
     """
-    Compares time claims from two statements.
-    Flags if normalized times differ by more than 60 minutes.
+    Detects time contradictions between two witness statements.
+    Uses minute-aware decimal hour comparison to catch conflicts
+    like "8:10 PM" vs "8:30 PM" (previously both normalized to 20).
+
+    Thresholds:
+    - diff > 0.25 hours (15 min) → MEDIUM contradiction
+    - diff > 3 hours             → HIGH contradiction
+    - diff <= 0.25 hours         → No contradiction (acceptable imprecision)
     """
     for ca in claims_a:
         for cb in claims_b:
-            hour_a = normalize_time_value(ca["extracted_value"])
-            hour_b = normalize_time_value(cb["extracted_value"])
-            if hour_a is not None and hour_b is not None:
-                diff = abs(hour_a - hour_b)
-                # Handle overnight wrap: 9 PM vs midnight = 3 hours, not 21
-                if diff > 12:
-                    diff = 24 - diff
-                if diff > 1:  # more than 1 hour difference
-                    severity = "HIGH" if diff > 3 else "MEDIUM"
-                    return {
-                        "type": "time",
-                        "tier": 1,
-                        "claim_a": ca["sentence"],
-                        "claim_b": cb["sentence"],
-                        "severity": severity,
-                        "xai_explanation": (
-                            f"Rule-based TIME contradiction detected. "
-                            f"Witness A references '{ca['extracted_value']}' "
-                            f"(~{hour_a}:00), "
-                            f"Witness B references '{cb['extracted_value']}' "
-                            f"(~{hour_b}:00). "
-                            f"Difference: approximately {diff} hour(s) "
-                            f"for the same described event."
-                        )
-                    }
+            val_a = _parse_time_to_hours(ca.get("extracted_value") or ca.get("sentence", ""))
+            if val_a is None and "sentence" in ca:
+                val_a = _parse_time_to_hours(ca["sentence"])
+
+            val_b = _parse_time_to_hours(cb.get("extracted_value") or cb.get("sentence", ""))
+            if val_b is None and "sentence" in cb:
+                val_b = _parse_time_to_hours(cb["sentence"])
+
+            if val_a is None or val_b is None:
+                continue
+
+            diff = abs(val_a - val_b)
+            # Overnight wrap: 11 PM vs midnight = 1 hour not 23
+            if diff > 12:
+                diff = 24 - diff
+
+            # Minimum threshold: 15 minutes
+            if diff <= 0.25:
+                continue
+
+            severity = "HIGH" if diff > 3 else "MEDIUM"
+            diff_minutes = int(round(diff * 60))
+            diff_display = (
+                f"{diff:.1f} hour(s)" if diff >= 1
+                else f"{diff_minutes} minute(s)"
+            )
+
+            return {
+                "type":    "time",
+                "tier":    1,
+                "claim_a": ca["sentence"],
+                "claim_b": cb["sentence"],
+                "severity": severity,
+                "xai_explanation": (
+                    f"Rule-based TIME contradiction detected. "
+                    f"Witness A references approximately {val_a:.2f}h, "
+                    f"Witness B references approximately {val_b:.2f}h. "
+                    f"Difference: approximately {diff_display} for the same described event."
+                ),
+            }
     return None
 
 
 def check_color_contradiction(claims_a: List[Dict],
                                claims_b: List[Dict]) -> Optional[Dict]:
     """
-    Compares color claims. Flags if different colors with same context.
+    Compares color claims. Flags if different colors with same context or matching synonym context.
     """
     for ca in claims_a:
         for cb in claims_b:
@@ -116,36 +148,23 @@ def check_color_contradiction(claims_a: List[Dict],
             color_b = cb["extracted_value"]
             context_a = ca.get("context", "")
             context_b = cb.get("context", "")
-            # Only flag if colors differ AND context words match or overlap
+            # Only flag if colors differ AND contexts match (exact or synonym)
             if color_a != color_b:
-                # If both mention the same object (context word), it's a contradiction
-                if context_a and context_b and context_a == context_b:
+                if _contexts_match(context_a, context_b):
+                    severity = "HIGH" if (context_a and context_b) else "MEDIUM"
+                    target_a = f"the {context_a}" if context_a else "the object"
+                    target_b = f"the {context_b}" if context_b else "the object"
                     return {
                         "type": "color",
                         "tier": 1,
                         "claim_a": ca["sentence"],
                         "claim_b": cb["sentence"],
-                        "severity": "HIGH",
+                        "severity": severity,
                         "xai_explanation": (
                             f"Rule-based COLOR contradiction detected. "
-                            f"Witness A describes the {context_a} as '{color_a}'. "
-                            f"Witness B describes the {context_b} as '{color_b}'. "
+                            f"Witness A describes {target_a} as '{color_a}'. "
+                            f"Witness B describes {target_b} as '{color_b}'. "
                             f"Different colors reported for the same object."
-                        )
-                    }
-                elif not context_a and not context_b:
-                    # No context, still flag but lower severity
-                    return {
-                        "type": "color",
-                        "tier": 1,
-                        "claim_a": ca["sentence"],
-                        "claim_b": cb["sentence"],
-                        "severity": "MEDIUM",
-                        "xai_explanation": (
-                            f"Rule-based COLOR contradiction detected. "
-                            f"Witness A mentions '{color_a}'. "
-                            f"Witness B mentions '{color_b}'. "
-                            f"Conflicting color descriptions."
                         )
                     }
     return None
