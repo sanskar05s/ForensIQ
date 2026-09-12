@@ -119,23 +119,24 @@ async def run_contradiction_check(case_id: str):
                 logger.warning(f"NLI escalation failed for pair: {e}")
                 # Non-fatal — continue with other pairs
 
-    # Fetch existing contradiction fingerprints to prevent duplicates.
-    # A duplicate is defined as: same witness pair + same type.
-    # This handles re-runs after build_state reset or timestamp changes.
+    # Fetch ALL existing contradictions including dismissed ones
     existing = supabase.table("contradictions")\
-        .select("witness_a_id, witness_b_id, type")\
+        .select("witness_a_id, witness_b_id, type, claim_a, claim_b")\
         .eq("case_id", case_id)\
         .execute().data or []
 
     existing_fingerprints = {
-        (row["witness_a_id"], row["witness_b_id"], row["type"])
+        (
+            min(str(row.get("witness_a_id") or ""), str(row.get("witness_b_id") or "")),
+            max(str(row.get("witness_a_id") or ""), str(row.get("witness_b_id") or "")),
+            row.get("type"),
+            min((row.get("claim_a") or "")[:50], (row.get("claim_b") or "")[:50]),
+            max((row.get("claim_a") or "")[:50], (row.get("claim_b") or "")[:50]),
+        )
         for row in existing
     }
-    # Also add reversed pair to catch A↔B vs B↔A duplicates
-    existing_fingerprints.update(
-        (row["witness_b_id"], row["witness_a_id"], row["type"])
-        for row in existing
-    )
+    # Note: is_dismissed=True rows are intentionally included —
+    # dismissed contradictions should not be resurrected.
 
     # Insert new contradiction rows (skip duplicates)
     new_count = 0
@@ -144,10 +145,17 @@ async def run_contradiction_check(case_id: str):
         if "nli_confidence" not in contradiction and "confidence" in contradiction:
             contradiction["nli_confidence"] = contradiction.get("confidence")
 
+        wa = str(contradiction.get("witness_a_id") or "")
+        wb = str(contradiction.get("witness_b_id") or "")
+        ca = (contradiction.get("claim_a") or "")[:50]
+        cb = (contradiction.get("claim_b") or "")[:50]
+
         fingerprint = (
-            contradiction.get("witness_a_id"),
-            contradiction.get("witness_b_id"),
-            contradiction.get("type")
+            min(wa, wb),
+            max(wa, wb),
+            contradiction.get("type"),
+            min(ca, cb),
+            max(ca, cb),
         )
         if fingerprint in existing_fingerprints:
             logger.info(f"Skipping duplicate contradiction: {fingerprint}")
@@ -158,7 +166,7 @@ async def run_contradiction_check(case_id: str):
                 if k in {
                     "case_id", "tier", "type", "witness_a_id", "witness_b_id",
                     "claim_a", "claim_b", "severity", "nli_confidence",
-                    "xai_explanation", "id", "created_at"
+                    "xai_explanation", "id", "created_at", "is_dismissed"
                 }
             }
             supabase.table("contradictions").insert(db_payload).execute()
@@ -190,35 +198,45 @@ async def run_contradiction_check(case_id: str):
 
 
 @router.get("/contradiction/cases/{case_id}")
-async def list_contradictions(case_id: str):
-    """Returns all contradictions for a case, newest first.
-
-    The select uses PostgREST foreign key embedding syntax
-    (witness_a:witness_a_id(witness_label)) which requires that the
-    contradictions table has FK constraints to witness_statements.
-    These constraints exist from the M0 SQL (01_create_tables.sql).
-    If this query returns an error, fall back to two separate lookups
-    per contradiction row instead.
+async def list_contradictions(case_id: str,
+                              include_dismissed: bool = False):
+    """
+    Returns contradictions for a case.
+    By default, dismissed contradictions are hidden.
+    Pass ?include_dismissed=true to show them (for audit purposes).
     """
     supabase = get_supabase_client()
-    result = supabase.table("contradictions")\
-        .select("*, witness_a:witness_a_id(witness_label), witness_b:witness_b_id(witness_label)")\
-        .eq("case_id", case_id)\
-        .order("created_at", desc=True)\
-        .execute()
+    query = supabase.table("contradictions")\
+        .select("*, "
+                "witness_a:witness_a_id(witness_label), "
+                "witness_b:witness_b_id(witness_label)")\
+        .eq("case_id", case_id)
 
-    # Deduplicate A↔B vs B↔A pairs
+    if not include_dismissed:
+        query = query.eq("is_dismissed", False)
+
+    result = query.order("created_at", desc=True).execute()
+
+    # Deduplicate by min/max witness pair + type + claim
+    # (now also considering claim text in fingerprint)
     seen = set()
     unique = []
     for c in (result.data or []):
+        wa = str(c.get("witness_a_id") or "")
+        wb = str(c.get("witness_b_id") or "")
+        ca = (c.get("claim_a") or "")[:50]
+        cb = (c.get("claim_b") or "")[:50]
         key = (
-            min(c["witness_a_id"], c["witness_b_id"]),
-            max(c["witness_a_id"], c["witness_b_id"]),
-            c["type"]
+            min(wa, wb),
+            max(wa, wb),
+            c.get("type"),
+            min(ca, cb),
+            max(ca, cb),
         )
         if key not in seen:
             seen.add(key)
             unique.append(c)
+
     return {"contradictions": unique}
 
 
@@ -262,11 +280,15 @@ async def check_staleness(case_id: str):
 
 @router.delete("/contradiction/cases/{case_id}/{contradiction_id}")
 async def dismiss_contradiction(case_id: str, contradiction_id: str):
-    """Dismisses (deletes) a specific contradiction."""
+    """
+    Soft-dismisses a contradiction by setting is_dismissed = TRUE.
+    Does NOT delete the row — preserves deduplication fingerprint
+    so the contradiction is not resurrected on the next rebuild.
+    """
     supabase = get_supabase_client()
     supabase.table("contradictions")\
-        .delete()\
+        .update({"is_dismissed": True})\
         .eq("id", contradiction_id)\
         .eq("case_id", case_id)\
         .execute()
-    return {"success": True}
+    return {"success": True, "dismissed": True}

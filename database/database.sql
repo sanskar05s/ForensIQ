@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS contradictions (
     severity        TEXT NOT NULL CHECK (severity IN ('LOW','MEDIUM','HIGH')),
     nli_confidence  FLOAT,       -- tier 2 only (0.0-1.0)
     xai_explanation TEXT NOT NULL,  -- human-readable reason this pair was flagged
+    is_dismissed    BOOLEAN NOT NULL DEFAULT FALSE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -507,7 +508,32 @@ WHERE c.id NOT IN (
 );
 
 
+-- CD-4: Add soft dismissal column
+ALTER TABLE public.contradictions
+ADD COLUMN IF NOT EXISTS is_dismissed BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Remove the invalid/old constraint if it exists
+ALTER TABLE public.contradictions
+DROP CONSTRAINT IF EXISTS contradictions_unique_pair;
+
+-- Canonical unique fingerprint:
+-- witness order does not matter
+-- claim order does not matter
+-- different claim text can coexist
+CREATE UNIQUE INDEX IF NOT EXISTS contradictions_unique_fingerprint
+ON public.contradictions (
+    case_id,
+    LEAST(witness_a_id, witness_b_id),
+    GREATEST(witness_a_id, witness_b_id),
+    type,
+    LEAST(claim_a, claim_b),
+    GREATEST(claim_a, claim_b)
+);
+
+-- Keep service-role access
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON public.contradictions
+TO service_role;
 
 
 -- Table for Case Hypothesis Analyzer
