@@ -353,6 +353,10 @@ export default function Timeline() {
               const srcBadge = getSourceBadge(event.source);
               const confBadge = getConfidenceBadge(event.confidence_state);
               const parsed = parseDescription(event.description, event.source);
+              const conflictRefs = (event.conflicts_with || []).map((ref) => {
+                const match = events.find((e) => e.id === ref);
+                return match ? match.relative_order : ref;
+              });
 
               return (
                 <div key={event.id} style={{ position: "relative", marginBottom: "20px" }}>
@@ -491,7 +495,12 @@ export default function Timeline() {
                         }}
                       >
                         <AlertTriangle size={12} />
-                        Time conflict detected — another witness reports a different time for this event.
+                        <span>
+                          Time conflict detected
+                          {conflictRefs && conflictRefs.length > 0
+                            ? ` — conflicts with event #${conflictRefs.join(", #")}`
+                            : " — another witness reports a different time for this event."}
+                        </span>
                       </div>
                     )}
                   </div>

@@ -102,7 +102,14 @@ async def get_timeline(case_id: str):
         .eq("case_id", case_id)\
         .order("relative_order", desc=False)\
         .execute()
-    return {"events": result.data or []}
+    events = result.data or []
+    return {
+        "events":          events,
+        "event_count":     len(events),
+        "confirmed_count": sum(1 for e in events if e.get("confidence_state") == "confirmed"),
+        "conflict_count":  sum(1 for e in events if e.get("confidence_state") == "low-conflict"),
+        "relative_count":  sum(1 for e in events if e.get("source") == "witness-relative"),
+    }
 
 
 @timeline_router.get("/timeline/cases/{case_id}/staleness")
