@@ -23,9 +23,21 @@ logger = logging.getLogger(__name__)
 # Clear labels (PERSON, GPE, LOC, FAC) pass through without Gemini.
 NEEDS_GEMINI = {"PRODUCT", "ORG", "WORK_OF_ART", "LAW", "NORP"}
 
-# spaCy labels to exclude entirely — no graph value regardless of context.
-EXCLUDE_ALWAYS = {"CARDINAL", "ORDINAL", "PERCENT", "MONEY", "QUANTITY",
-                  "TIME", "DATE"}
+# Types to exclude entirely from all downstream processing.
+# These have no investigative value in any module.
+# NOTE: TIME and DATE are intentionally NOT here —
+# they feed temporal.py for absolute_time extraction.
+# They are excluded from the Knowledge Graph by GRAPH_ENTITY_TYPES
+# in graph_builder.py, not here.
+EXCLUDE_ALWAYS = {
+    "CARDINAL",    # bare numbers: "4", "12"
+    "ORDINAL",     # "first", "second"
+    "PERCENT",     # percentages
+    "MONEY",       # monetary values
+    "QUANTITY",    # measurements
+    "LANGUAGE",    # language names
+    "WORK_OF_ART", # books, songs (rarely forensic)
+}
 
 # ForensIQ graph-relevant output types from Gemini
 VALID_OUTPUT_TYPES = {
@@ -193,7 +205,14 @@ def classify_ambiguous_entities(
         entity_type = ent.get("type", "")
 
         # Always exclude these
-        if spacy_label in EXCLUDE_ALWAYS or entity_type == "TIME":
+        if spacy_label in EXCLUDE_ALWAYS:
+            continue
+
+        # TIME and DATE: pass through to temporal pipeline.
+        # Do not send to Gemini — their classification is already correct.
+        # They will be excluded from the Knowledge Graph by graph_builder.py.
+        if spacy_label in {"TIME", "DATE"} or entity_type == "TIME":
+            clear_entities.append(ent)  # keep as-is, skip Gemini
             continue
 
         # Clear types — pass through directly
