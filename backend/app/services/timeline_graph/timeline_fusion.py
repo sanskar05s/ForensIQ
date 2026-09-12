@@ -47,6 +47,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
 import re
+import uuid
 import logging
 
 logger = logging.getLogger(__name__)
@@ -458,12 +459,26 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
         .eq("case_id", case_id).eq("analysis_status", "analyzed")\
         .execute().data or []
 
-    conflict_ids: Set[str] = set()
-    for c in supabase.table("contradictions")\
-            .select("witness_a_id, witness_b_id")\
-            .eq("case_id", case_id).eq("type", "time")\
-            .execute().data or []:
-        conflict_ids.update([c["witness_a_id"], c["witness_b_id"]])
+    # Fetch time contradictions with claim text for granular event-level matching.
+    # Previously only fetched witness IDs → blanket-flagged all events from any
+    # witness involved in ANY time contradiction. Now we match specific claims
+    # to specific timeline events.
+    time_contradictions = supabase.table("contradictions")\
+        .select("witness_a_id, witness_b_id, claim_a, claim_b")\
+        .eq("case_id", case_id).eq("type", "time")\
+        .eq("is_dismissed", False)\
+        .execute().data or []
+
+    # Build lookup: stmt_id → list of claim texts that are in conflict
+    conflict_claims: Dict[str, List[str]] = {}
+    for c in time_contradictions:
+        for stmt_id, claim in [
+            (c["witness_a_id"], c.get("claim_a", "")),
+            (c["witness_b_id"], c.get("claim_b", "")),
+        ]:
+            conflict_claims.setdefault(stmt_id, []).append(
+                claim.lower()[:80] if claim else ""
+            )
 
     case_date = _infer_case_date(evidence_rows)
 
@@ -490,7 +505,7 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
 
     # ── Phase 1B: Witness statement events ────────────────────────────────────
     for stmt in statements:
-        is_conflict = stmt["id"] in conflict_ids
+        stmt_claims = conflict_claims.get(stmt["id"], [])
         for entry in (stmt.get("temporal_sequence") or []):
             raw = entry.get("event_text", "")
             abs_str = entry.get("absolute_time")
@@ -550,6 +565,21 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
                 canon_ref = next(iter(canon)) if canon else ref_raw
 
             is_relative = explicit_dt is None
+
+            # Granular conflict matching: only flag this specific event as
+            # low-conflict if its text overlaps with a contradiction claim.
+            # Previously ALL events from any conflicting witness were flagged.
+            is_conflict = False
+            if stmt_claims:
+                raw_lower = raw.lower()
+                for claim in stmt_claims:
+                    if not claim:
+                        # Claim text missing → fall back to blanket flag
+                        is_conflict = True
+                        break
+                    if claim[:40] in raw_lower or raw_lower[:40] in claim:
+                        is_conflict = True
+                        break
 
             events.append(_Event(
                 description=f"[{stmt['witness_label']}] {raw[:300]}",
@@ -632,6 +662,7 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
     order = 1
     for ev in incident:
         final.append({
+            "id":               str(uuid.uuid4()),
             "case_id":          case_id,
             "description":      ev.description,
             "timestamp_hard":   ev.timestamp_hard,
@@ -645,6 +676,7 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
 
     for ev in evidence:
         final.append({
+            "id":               str(uuid.uuid4()),
             "case_id":          case_id,
             "description":      ev.description,
             "timestamp_hard":   ev.timestamp_hard,
@@ -655,6 +687,44 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
             "source_ids":       ev.source_ids,
         })
         order += 1
+
+    # ── Phase 5: Populate conflicts_with ───────────────────────────────────────
+    # Link opposing events from time contradictions using pre-generated UUIDs.
+    # Each contradiction has (witness_a_id, claim_a, witness_b_id, claim_b).
+    # We find the specific timeline events whose descriptions match each claim
+    # and cross-link their UUIDs.
+    if time_contradictions:
+        # Build lookup: stmt_id → list of (event_index, description_lower)
+        stmt_to_events: Dict[str, List[Tuple[int, str]]] = {}
+        for i, ev in enumerate(final):
+            for sid in (ev.get("source_ids") or []):
+                if sid.get("type") == "statement":
+                    stmt_to_events.setdefault(sid["id"], []).append(
+                        (i, ev["description"].lower())
+                    )
+
+        for c in time_contradictions:
+            claim_a_lower = (c.get("claim_a") or "").lower()[:40]
+            claim_b_lower = (c.get("claim_b") or "").lower()[:40]
+            events_a = stmt_to_events.get(c["witness_a_id"], [])
+            events_b = stmt_to_events.get(c["witness_b_id"], [])
+
+            if not claim_a_lower or not claim_b_lower:
+                continue  # Skip if claims are empty
+
+            # Find matching events for each side
+            matched_a = [i for i, desc in events_a if claim_a_lower in desc]
+            matched_b = [i for i, desc in events_b if claim_b_lower in desc]
+
+            # Cross-link matched events
+            for ia in matched_a:
+                for ib in matched_b:
+                    id_a = final[ia]["id"]
+                    id_b = final[ib]["id"]
+                    if id_b not in final[ia]["conflicts_with"]:
+                        final[ia]["conflicts_with"].append(id_b)
+                    if id_a not in final[ib]["conflicts_with"]:
+                        final[ib]["conflicts_with"].append(id_a)
 
     logger.info(
         f"Timeline [{case_id}]: {len(final)} events — "
