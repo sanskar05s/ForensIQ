@@ -1,7 +1,7 @@
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
 import torch.nn.functional as F
-from typing import List, Dict
+from typing import List, Dict, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -74,13 +74,19 @@ def predict_nli(premise: str, hypothesis: str) -> Dict:
     }
 
 
-def run_tier2(statement_a: Dict, statement_b: Dict) -> List[Dict]:
+def run_tier2(statement_a: Dict,
+              statement_b: Dict,
+              hedge_a: Optional[int] = None,
+              hedge_b: Optional[int] = None) -> List[Dict]:
     """
     Runs NLI on the full statement text pair.
     Only called when Tier 1 finds no rule-based contradiction.
     Returns list of NLI contradictions above CONFIDENCE_THRESHOLD.
     """
     from app.services.contradiction.claim_extractor import split_into_sentences
+
+    h_a = hedge_a if hedge_a is not None else (statement_a.get("hedge_marker_count", 0) or 0)
+    h_b = hedge_b if hedge_b is not None else (statement_b.get("hedge_marker_count", 0) or 0)
 
     sentences_a = split_into_sentences(statement_a["raw_text"])
     sentences_b = split_into_sentences(statement_b["raw_text"])
@@ -95,29 +101,46 @@ def run_tier2(statement_a: Dict, statement_b: Dict) -> List[Dict]:
 
             result = predict_nli(sa, sb)
 
-            if (result["label"] == "contradiction"
-                    and result["contradiction_confidence"] >= CONFIDENCE_THRESHOLD):
+            if result["label"] == "contradiction":
+                contradiction_score = result["contradiction_confidence"]
+
+                # Apply hedge discount to NLI confidence
+                if h_a >= 3 and h_b >= 3:
+                    contradiction_score = round(contradiction_score * 0.88, 3)
+                elif h_a >= 3 or h_b >= 3:
+                    contradiction_score = round(contradiction_score * 0.93, 3)
+
+                if contradiction_score < CONFIDENCE_THRESHOLD:
+                    continue   # Discarded after hedge adjustment — was borderline
+
+                xai = (
+                    f"Semantic contradiction detected by NLI model "
+                    f"({MODEL_NAME}) with "
+                    f"{contradiction_score*100:.0f}% confidence. "
+                    f"The statements are semantically incompatible but do not "
+                    f"trigger rule-based detection. "
+                    f"Investigator judgment required."
+                )
+                if h_a >= 3 or h_b >= 3:
+                    xai += (
+                        f" Confidence adjusted for witness uncertainty "
+                        f"(hedge markers: A={h_a}, B={h_b})."
+                    )
+
                 contradictions.append({
                     "type": "nli",
                     "tier": 2,
                     "claim_a": sa,
                     "claim_b": sb,
                     "severity": (
-                        "HIGH"   if result["contradiction_confidence"] >= 0.90 else
-                        "MEDIUM" if result["contradiction_confidence"] >= 0.75 else
+                        "HIGH"   if contradiction_score >= 0.90 else
+                        "MEDIUM" if contradiction_score >= 0.75 else
                         "LOW"
                     ),
-                    "nli_confidence": result["contradiction_confidence"],
+                    "nli_confidence": contradiction_score,
                     "witness_a_id": statement_a["id"],
                     "witness_b_id": statement_b["id"],
-                    "xai_explanation": (
-                        f"Semantic contradiction detected by NLI model "
-                        f"({MODEL_NAME}) with "
-                        f"{result['contradiction_confidence']*100:.0f}% confidence. "
-                        f"The statements are semantically incompatible but do not "
-                        f"trigger rule-based detection. "
-                        f"Investigator judgment required."
-                    )
+                    "xai_explanation": xai
                 })
 
     # Return only the highest-confidence NLI contradiction per pair

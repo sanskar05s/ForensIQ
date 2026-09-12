@@ -55,6 +55,36 @@ def _contexts_match(ctx_a: str, ctx_b: str) -> bool:
     return False
 
 
+def _apply_hedge_discount(severity: str,
+                          confidence: float,
+                          hedge_a: int,
+                          hedge_b: int) -> tuple[str, float]:
+    """
+    Downgrades contradiction severity when both witnesses used
+    highly uncertain language. hedge_a/hedge_b are the
+    hedge_marker_count values from witness_statements.
+
+    Logic:
+    - Both witnesses HIGH uncertainty (>=3 markers each):
+      HIGH -> MEDIUM, MEDIUM -> LOW, confidence -= 0.12
+    - One witness HIGH uncertainty:
+      HIGH -> MEDIUM (only), confidence -= 0.07
+    - Neither witness uncertain: no change
+    """
+    both_high   = hedge_a >= 3 and hedge_b >= 3
+    one_high    = (hedge_a >= 3) != (hedge_b >= 3)  # XOR
+
+    DOWNGRADE = {"HIGH": "MEDIUM", "MEDIUM": "LOW", "LOW": "LOW"}
+
+    if both_high:
+        return DOWNGRADE.get(severity, severity), round(confidence - 0.12, 3)
+    if one_high:
+        downgraded = DOWNGRADE.get(severity, severity) if severity == "HIGH" \
+                     else severity
+        return downgraded, round(confidence - 0.07, 3)
+    return severity, confidence
+
+
 # Time normalization map (legacy reference)
 TIME_NORMALIZATION = {
     'midnight': 23.99,
@@ -81,16 +111,18 @@ def normalize_time_value(time_str: str) -> Optional[int]:
 
 
 def check_time_contradiction(claims_a: List[Dict],
-                              claims_b: List[Dict]) -> Optional[Dict]:
+                             claims_b: List[Dict],
+                             hedge_a: int = 0,
+                             hedge_b: int = 0) -> Optional[Dict]:
     """
     Detects time contradictions between two witness statements.
     Uses minute-aware decimal hour comparison to catch conflicts
     like "8:10 PM" vs "8:30 PM" (previously both normalized to 20).
 
     Thresholds:
-    - diff > 0.25 hours (15 min) → MEDIUM contradiction
-    - diff > 3 hours             → HIGH contradiction
-    - diff <= 0.25 hours         → No contradiction (acceptable imprecision)
+    - diff > 0.25 hours (15 min) -> MEDIUM contradiction
+    - diff > 3 hours             -> HIGH contradiction
+    - diff <= 0.25 hours         -> No contradiction (acceptable imprecision)
     """
     for ca in claims_a:
         for cb in claims_b:
@@ -131,6 +163,17 @@ def check_time_contradiction(claims_a: List[Dict],
             else:  # 15min - 1h
                 confidence = 0.72
 
+            severity, confidence = _apply_hedge_discount(
+                severity, confidence, hedge_a, hedge_b
+            )
+            hedge_note = ""
+            if hedge_a >= 3 or hedge_b >= 3:
+                hedge_note = (
+                    f" Note: one or both witnesses used high-uncertainty language "
+                    f"(hedge markers: A={hedge_a}, B={hedge_b}). "
+                    f"Severity adjusted accordingly."
+                )
+
             return {
                 "type":           "time",
                 "tier":           1,
@@ -144,13 +187,16 @@ def check_time_contradiction(claims_a: List[Dict],
                     f"Witness A references approximately {val_a:.2f}h, "
                     f"Witness B references approximately {val_b:.2f}h. "
                     f"Difference: approximately {diff_display} for the same described event."
+                    f"{hedge_note}"
                 ),
             }
     return None
 
 
 def check_color_contradiction(claims_a: List[Dict],
-                               claims_b: List[Dict]) -> Optional[Dict]:
+                              claims_b: List[Dict],
+                              hedge_a: int = 0,
+                              hedge_b: int = 0) -> Optional[Dict]:
     """
     Compares color claims. Flags if different colors with same context or matching synonym context.
     """
@@ -168,6 +214,18 @@ def check_color_contradiction(claims_a: List[Dict],
                     target_b = f"the {context_b}" if context_b else "the object"
                     is_exact = bool(context_a and context_b and context_a.lower().strip() == context_b.lower().strip())
                     confidence = 0.93 if is_exact else 0.80
+
+                    severity, confidence = _apply_hedge_discount(
+                        severity, confidence, hedge_a, hedge_b
+                    )
+                    hedge_note = ""
+                    if hedge_a >= 3 or hedge_b >= 3:
+                        hedge_note = (
+                            f" Note: one or both witnesses used high-uncertainty language "
+                            f"(hedge markers: A={hedge_a}, B={hedge_b}). "
+                            f"Severity adjusted accordingly."
+                        )
+
                     return {
                         "type":           "color",
                         "tier":           1,
@@ -181,13 +239,16 @@ def check_color_contradiction(claims_a: List[Dict],
                             f"Witness A describes {target_a} as '{color_a}'. "
                             f"Witness B describes {target_b} as '{color_b}'. "
                             f"Different colors reported for the same object."
+                            f"{hedge_note}"
                         )
                     }
     return None
 
 
 def check_quantity_contradiction(claims_a: List[Dict],
-                                  claims_b: List[Dict]) -> Optional[Dict]:
+                                  claims_b: List[Dict],
+                                  hedge_a: int = 0,
+                                  hedge_b: int = 0) -> Optional[Dict]:
     """
     Flags quantity contradictions only between the same semantic type.
 
@@ -221,6 +282,17 @@ def check_quantity_contradiction(claims_a: List[Dict],
             severity = "HIGH" if diff > 1 else "MEDIUM"
             confidence = 0.92 if diff > 1 else 0.78
 
+            severity, confidence = _apply_hedge_discount(
+                severity, confidence, hedge_a, hedge_b
+            )
+            hedge_note = ""
+            if hedge_a >= 3 or hedge_b >= 3:
+                hedge_note = (
+                    f" Note: one or both witnesses used high-uncertainty language "
+                    f"(hedge markers: A={hedge_a}, B={hedge_b}). "
+                    f"Severity adjusted accordingly."
+                )
+
             type_labels = {
                 "police_count":  "number of police officers",
                 "suspect_count": "number of suspects",
@@ -245,12 +317,15 @@ def check_quantity_contradiction(claims_a: List[Dict],
                     f"Witness A states: {val_a}. "
                     f"Witness B states: {val_b}. "
                     f"Difference: {diff}."
+                    f"{hedge_note}"
                 )
             }
     return None
 
 def check_direction_contradiction(claims_a: List[Dict],
-                                   claims_b: List[Dict]) -> Optional[Dict]:
+                                   claims_b: List[Dict],
+                                   hedge_a: int = 0,
+                                   hedge_b: int = 0) -> Optional[Dict]:
     """
     Flags directly opposing directional claims.
 
@@ -273,13 +348,25 @@ def check_direction_contradiction(claims_a: List[Dict],
             dir_b = cb["extracted_value"]
 
             if frozenset([dir_a, dir_b]) in OPPOSITE_DIRECTIONS:
+                severity = "HIGH"
                 confidence = 0.88
+                severity, confidence = _apply_hedge_discount(
+                    severity, confidence, hedge_a, hedge_b
+                )
+                hedge_note = ""
+                if hedge_a >= 3 or hedge_b >= 3:
+                    hedge_note = (
+                        f" Note: one or both witnesses used high-uncertainty language "
+                        f"(hedge markers: A={hedge_a}, B={hedge_b}). "
+                        f"Severity adjusted accordingly."
+                    )
+
                 return {
                     "type":           "direction",
                     "tier":           1,
                     "claim_a":        ca["sentence"],
                     "claim_b":        cb["sentence"],
-                    "severity":       "HIGH",
+                    "severity":       severity,
                     "confidence":     confidence,
                     "nli_confidence": confidence,
                     "xai_explanation": (
@@ -288,11 +375,15 @@ def check_direction_contradiction(claims_a: List[Dict],
                         f"Witness B states direction '{dir_b}'. "
                         f"These are directly opposing directions describing "
                         f"the same event or subject."
+                        f"{hedge_note}"
                     )
                 }
     return None
 
-def run_tier1(statement_a: Dict, statement_b: Dict) -> List[Dict]:
+def run_tier1(statement_a: Dict,
+              statement_b: Dict,
+              hedge_a: Optional[int] = None,
+              hedge_b: Optional[int] = None) -> List[Dict]:
     """
     Runs all four Tier 1 rule checks on a pair of witness statements.
     Returns list of detected contradictions (may be empty).
@@ -301,6 +392,8 @@ def run_tier1(statement_a: Dict, statement_b: Dict) -> List[Dict]:
     """
     text_a = statement_a["raw_text"]
     text_b = statement_b["raw_text"]
+    h_a = hedge_a if hedge_a is not None else (statement_a.get("hedge_marker_count", 0) or 0)
+    h_b = hedge_b if hedge_b is not None else (statement_b.get("hedge_marker_count", 0) or 0)
 
     claims_a = extract_all_claims(text_a)
     claims_b = extract_all_claims(text_b)
@@ -317,7 +410,9 @@ def run_tier1(statement_a: Dict, statement_b: Dict) -> List[Dict]:
     for check_fn, claim_type in checks:
         result = check_fn(
             claims_a.get(claim_type, []),
-            claims_b.get(claim_type, [])
+            claims_b.get(claim_type, []),
+            hedge_a=h_a,
+            hedge_b=h_b,
         )
         if result:
             result["witness_a_id"] = statement_a["id"]

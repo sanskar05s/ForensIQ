@@ -89,7 +89,12 @@ async def run_contradiction_check(case_id: str):
             continue
 
         # Tier 1: rule-based
-        tier1_results = run_tier1(stmt_a, stmt_b)
+        tier1_results = run_tier1(
+            stmt_a,
+            stmt_b,
+            hedge_a=stmt_a.get("hedge_marker_count", 0) or 0,
+            hedge_b=stmt_b.get("hedge_marker_count", 0) or 0,
+        )
 
         if tier1_results:
             new_contradiction_rows.extend(tier1_results)
@@ -97,7 +102,12 @@ async def run_contradiction_check(case_id: str):
             try:
                 from app.services.contradiction.candidate_filter import should_compare_nli
                 if should_compare_nli(stmt_a, stmt_b):
-                    tier2_results = run_tier2(stmt_a, stmt_b)
+                    tier2_results = run_tier2(
+                        stmt_a,
+                        stmt_b,
+                        hedge_a=stmt_a.get("hedge_marker_count", 0) or 0,
+                        hedge_b=stmt_b.get("hedge_marker_count", 0) or 0,
+                    )
                     new_contradiction_rows.extend(tier2_results)
                 else:
                     logger.debug(
