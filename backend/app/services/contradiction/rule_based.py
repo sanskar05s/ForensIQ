@@ -121,12 +121,24 @@ def check_time_contradiction(claims_a: List[Dict],
                 else f"{diff_minutes} minute(s)"
             )
 
+            # Confidence scales with diff magnitude
+            if diff > 6:
+                confidence = 0.95
+            elif diff > 3:
+                confidence = 0.90
+            elif diff > 1:
+                confidence = 0.82
+            else:  # 15min - 1h
+                confidence = 0.72
+
             return {
-                "type":    "time",
-                "tier":    1,
-                "claim_a": ca["sentence"],
-                "claim_b": cb["sentence"],
-                "severity": severity,
+                "type":           "time",
+                "tier":           1,
+                "claim_a":        ca["sentence"],
+                "claim_b":        cb["sentence"],
+                "severity":       severity,
+                "confidence":     confidence,
+                "nli_confidence": confidence,
                 "xai_explanation": (
                     f"Rule-based TIME contradiction detected. "
                     f"Witness A references approximately {val_a:.2f}h, "
@@ -154,12 +166,16 @@ def check_color_contradiction(claims_a: List[Dict],
                     severity = "HIGH" if (context_a and context_b) else "MEDIUM"
                     target_a = f"the {context_a}" if context_a else "the object"
                     target_b = f"the {context_b}" if context_b else "the object"
+                    is_exact = bool(context_a and context_b and context_a.lower().strip() == context_b.lower().strip())
+                    confidence = 0.93 if is_exact else 0.80
                     return {
-                        "type": "color",
-                        "tier": 1,
-                        "claim_a": ca["sentence"],
-                        "claim_b": cb["sentence"],
-                        "severity": severity,
+                        "type":           "color",
+                        "tier":           1,
+                        "claim_a":        ca["sentence"],
+                        "claim_b":        cb["sentence"],
+                        "severity":       severity,
+                        "confidence":     confidence,
+                        "nli_confidence": confidence,
                         "xai_explanation": (
                             f"Rule-based COLOR contradiction detected. "
                             f"Witness A describes {target_a} as '{color_a}'. "
@@ -176,8 +192,12 @@ def check_quantity_contradiction(claims_a: List[Dict],
     Flags quantity contradictions only between the same semantic type.
 
     actor_count vs actor_count    ← valid
+    police_count vs police_count  ← valid
+    suspect_count vs suspect_count← valid
+    victim_count vs victim_count  ← valid
     object_count vs object_count  ← valid
     vehicle_count vs vehicle_count ← valid
+    police_count vs suspect_count ← NEVER compared (different roles)
     actor_count vs duration       ← NEVER compared (different types)
     """
     for ca in claims_a:
@@ -199,8 +219,12 @@ def check_quantity_contradiction(claims_a: List[Dict],
 
             diff = abs(val_a - val_b)
             severity = "HIGH" if diff > 1 else "MEDIUM"
+            confidence = 0.92 if diff > 1 else 0.78
 
             type_labels = {
+                "police_count":  "number of police officers",
+                "suspect_count": "number of suspects",
+                "victim_count":  "number of victims",
                 "actor_count":   "number of people",
                 "object_count":  "number of items",
                 "vehicle_count": "number of vehicles",
@@ -208,11 +232,13 @@ def check_quantity_contradiction(claims_a: List[Dict],
             label = type_labels.get(type_a, "quantity")
 
             return {
-                "type": "quantity",
-                "tier": 1,
-                "claim_a": ca["sentence"],
-                "claim_b": cb["sentence"],
-                "severity": severity,
+                "type":           "quantity",
+                "tier":           1,
+                "claim_a":        ca["sentence"],
+                "claim_b":        cb["sentence"],
+                "severity":       severity,
+                "confidence":     confidence,
+                "nli_confidence": confidence,
                 "xai_explanation": (
                     f"Rule-based QUANTITY contradiction detected. "
                     f"Witnesses report different {label}. "
@@ -247,12 +273,15 @@ def check_direction_contradiction(claims_a: List[Dict],
             dir_b = cb["extracted_value"]
 
             if frozenset([dir_a, dir_b]) in OPPOSITE_DIRECTIONS:
+                confidence = 0.88
                 return {
-                    "type": "direction",
-                    "tier": 1,
-                    "claim_a": ca["sentence"],
-                    "claim_b": cb["sentence"],
-                    "severity": "HIGH",
+                    "type":           "direction",
+                    "tier":           1,
+                    "claim_a":        ca["sentence"],
+                    "claim_b":        cb["sentence"],
+                    "severity":       "HIGH",
+                    "confidence":     confidence,
+                    "nli_confidence": confidence,
                     "xai_explanation": (
                         f"Rule-based DIRECTION contradiction detected. "
                         f"Witness A states direction '{dir_a}'. "

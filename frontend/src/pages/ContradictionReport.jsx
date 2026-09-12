@@ -304,8 +304,8 @@ export default function ContradictionReport() {
           {c.xai_explanation}
         </p>
 
-        {/* NLI confidence — Tier 2 only */}
-        {c.tier === 2 && c.nli_confidence != null && (
+        {/* Confidence display — Tier 1 & Tier 2 */}
+        {c.nli_confidence != null && (
           <div
             style={{
               marginTop: "10px",
@@ -314,7 +314,8 @@ export default function ContradictionReport() {
               color: severityColor,
             }}
           >
-            NLI Confidence: {(c.nli_confidence * 100).toFixed(0)}%
+            {c.tier === 1 ? "Rule Confidence" : "NLI Confidence"}:{" "}
+            {(c.nli_confidence * 100).toFixed(0)}%
           </div>
         )}
       </div>

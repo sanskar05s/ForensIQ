@@ -27,7 +27,32 @@ _IDENTIFIER_RE = re.compile(
     re.IGNORECASE
 )
 
-# Actor counts — people, criminals, officers: valid quantities
+# Police / authority role
+_POLICE_COUNT_RE = re.compile(
+    r'\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+'
+    r'(?:police\s+)?'
+    r'(officers?|constables?|policem[ae]n|cops?|detectives?|'
+    r'inspectors?|guards?|soldiers?|troopers?)\b',
+    re.IGNORECASE
+)
+
+# Suspect / criminal role
+_SUSPECT_COUNT_RE = re.compile(
+    r'\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+'
+    r'(suspects?|attackers?|robbers?|criminals?|thieves?|gunm[ae]n|'
+    r'perpetrators?|offenders?|culprits?|intruders?|assailants?|'
+    r'masked\s+men?|armed\s+men?)\b',
+    re.IGNORECASE
+)
+
+# Victim role
+_VICTIM_COUNT_RE = re.compile(
+    r'\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+'
+    r'(victims?|injured|casualties|hostages?|patients?)\b',
+    re.IGNORECASE
+)
+
+# Generic actor counts — fallback when specific role is unknown
 _ACTOR_COUNT_RE = re.compile(
     r'\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+'
     r'(armed|masked|accused|'
@@ -289,16 +314,37 @@ def extract_quantity_claims(text: str) -> List[Dict]:
         if _IDENTIFIER_RE.search(sentence):
             continue
 
-        # Gate 2: Check for actor count first (highest priority)
+        # Gate 2: Check for role-specific actor count first (more precise)
+        role_matched = False
+        for role_pattern, role_type in [
+            (_POLICE_COUNT_RE,  "police_count"),
+            (_SUSPECT_COUNT_RE, "suspect_count"),
+            (_VICTIM_COUNT_RE,  "victim_count"),
+        ]:
+            role_m = role_pattern.search(lower)
+            if role_m:
+                claims.append({
+                    "sentence":        sentence,
+                    "extracted_value": role_m.group(1).strip(),
+                    "semantic_type":   role_type,
+                    "claim_type":      "quantity",
+                })
+                role_matched = True
+                break
+
+        if role_matched:
+            continue
+
+        # Fall back to generic actor_count only if no role match
         actor_m = _ACTOR_COUNT_RE.search(lower)
         if actor_m:
             claims.append({
-                "sentence": sentence,
+                "sentence":        sentence,
                 "extracted_value": actor_m.group(1).strip(),
-                "semantic_type": "actor_count",
-                "claim_type": "quantity",
+                "semantic_type":   "actor_count",
+                "claim_type":      "quantity",
             })
-            continue   # Don't also check for object/vehicle in same sentence
+            continue
 
         # Gate 3: Skip duration sentences AFTER checking actor count
         # (handles "two suspects fled five minutes later" — actor extracted above)

@@ -131,6 +131,9 @@ async def run_contradiction_check(case_id: str):
     new_count = 0
     for contradiction in new_contradiction_rows:
         contradiction["case_id"] = case_id
+        if "nli_confidence" not in contradiction and "confidence" in contradiction:
+            contradiction["nli_confidence"] = contradiction.get("confidence")
+
         fingerprint = (
             contradiction.get("witness_a_id"),
             contradiction.get("witness_b_id"),
@@ -140,7 +143,15 @@ async def run_contradiction_check(case_id: str):
             logger.info(f"Skipping duplicate contradiction: {fingerprint}")
             continue
         try:
-            supabase.table("contradictions").insert(contradiction).execute()
+            db_payload = {
+                k: v for k, v in contradiction.items()
+                if k in {
+                    "case_id", "tier", "type", "witness_a_id", "witness_b_id",
+                    "claim_a", "claim_b", "severity", "nli_confidence",
+                    "xai_explanation", "id", "created_at"
+                }
+            }
+            supabase.table("contradictions").insert(db_payload).execute()
             existing_fingerprints.add(fingerprint)
             new_count += 1
         except Exception as e:
