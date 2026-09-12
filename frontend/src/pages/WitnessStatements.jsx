@@ -732,20 +732,54 @@ export default function WitnessStatements() {
                       >
                         {type}:
                       </span>
-                      {ents.map((ent, i) => (
-                        <span
-                          key={i}
-                          style={{
-                            padding: "2px 10px",
-                            borderRadius: "999px",
-                            background: "var(--bg-muted)",
-                            fontSize: "12px",
-                            color: "var(--text-primary)",
-                          }}
-                        >
-                          {ent.text}
-                        </span>
-                      ))}
+                      {ents.map((ent, i) => {
+                        const entityColor = getEntityColor(type);
+                        return (
+                          <span
+                            key={i}
+                            title={ent.xai_reason || ""}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              padding: "2px 8px",
+                              borderRadius: "12px",
+                              fontSize: "12px",
+                              background: entityColor.bg || "var(--bg-muted)",
+                              color: "var(--text-primary)",
+                              border: `1px solid ${entityColor.color}44`,
+                              cursor: ent.xai_reason ? "help" : "default",
+                            }}
+                          >
+                            {ent.text}
+                            {ent._spacy_label === "GEMINI_EXTRACTED" && (
+                              <span
+                                style={{
+                                  fontSize: "8px",
+                                  opacity: 0.6,
+                                  fontStyle: "italic",
+                                  marginLeft: "1px",
+                                  color: entityColor.color,
+                                }}
+                              >
+                                AI
+                              </span>
+                            )}
+                            {ent.confidence !== undefined && ent.confidence < 0.85 && (
+                              <span
+                                style={{
+                                  fontSize: "9px",
+                                  opacity: 0.7,
+                                  fontFamily: "'JetBrains Mono', monospace",
+                                  color: entityColor.color,
+                                }}
+                              >
+                                {Math.round(ent.confidence * 100)}%
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })}
                     </div>
                   )
                 )
@@ -813,7 +847,9 @@ export default function WitnessStatements() {
                             color: "var(--accent)",
                           }}
                         >
-                          [{event.absolute_time}]
+                          [{event.absolute_time}
+                          {event.absolute_time_normalized &&
+                            ` → ${event.absolute_time_normalized}`}]
                         </span>
                       )}
                       <span
