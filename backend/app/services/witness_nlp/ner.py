@@ -69,9 +69,10 @@ def extract_entities(text: str) -> list:
                 "_spacy_label": ent.label_,
                 "start": ent.start_char,
                 "end": ent.end_char,
+                "confidence": 0.85,
                 "xai_reason": (
                     f"'{ent.text}' identified as {entity_type} "
-                    f"by spaCy NLP model (label: {ent.label_})."
+                    f"by spaCy transformer NER (label: {ent.label_})."
                 ),
             }
         )

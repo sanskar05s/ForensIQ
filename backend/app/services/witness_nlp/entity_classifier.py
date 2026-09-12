@@ -170,6 +170,7 @@ def extract_missing_entities(
                 "_spacy_label": "GEMINI_EXTRACTED",
                 "start":        0,
                 "end":          0,
+                "confidence":   float(ent.get("confidence", 0.80)),
                 "xai_reason":   (
                     f"'{text}' extracted as {etype} by Gemini "
                     f"(not detected by spaCy NER)."
@@ -259,14 +260,17 @@ def classify_ambiguous_entities(
                 text_lower = ent["text"].lower()
                 if text_lower in gemini_map:
                     gemini_result = gemini_map[text_lower]
+                    gemini_confidence = float(gemini_result.get("confidence", 0.80))
+
                     reclassified.append({
                         **ent,
-                        "type": gemini_result["type"],
+                        "type":       gemini_result["type"],
+                        "confidence": round(gemini_confidence, 3),
                         "xai_reason": (
-                            f"'{ent['text']}' classified as {gemini_result['type']} "
+                            f"'{ent['text']}' reclassified as {gemini_result['type']} "
                             f"by Gemini semantic classifier "
-                            f"(confidence: {gemini_result.get('confidence', 0):.0%}). "
-                            f"spaCy original label: {ent.get('_spacy_label', 'unknown')}."
+                            f"(confidence: {gemini_confidence:.0%}). "
+                            f"Original spaCy label: {ent.get('_spacy_label', 'unknown')}."
                         )
                     })
                 # If Gemini returned DISCARD or didn't return it, skip entirely
