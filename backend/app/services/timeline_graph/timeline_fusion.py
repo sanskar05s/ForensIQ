@@ -484,21 +484,48 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
 
     events: List[_Event] = []
 
-    # ── Phase 1A: Evidence (upload time, always last) ─────────────────────────
+    # ── Phase 1A: Evidence (EXIF capture time → interleave; else → end) ────────
     for ev in evidence_rows:
-        upload_dt = _parse_full(ev.get("uploaded_at") or "")
+        exif = ev.get("exif_metadata") or {}
+        capture_dt: Optional[datetime] = None
+        is_evidence_anchored = False
+
+        # Priority 1: EXIF capture timestamp (actual event time)
+        for field in ("capture_timestamp", "created_timestamp", "creation_date"):
+            ts = exif.get(field)
+            if ts:
+                dt = _parse_full(ts)
+                if dt and dt.year > 2020:
+                    capture_dt = dt
+                    is_evidence_anchored = True
+                    break
+
+        # Priority 2: Upload timestamp → end of timeline (current behavior)
+        upload_dt = _parse_full(ev.get("uploaded_at") or "") if not capture_dt else None
+
+        if is_evidence_anchored and capture_dt:
+            # Evidence interleaves with witness events at capture time
+            ev_sort_score = _to_score(capture_dt)
+            ev_ts_hard    = capture_dt.isoformat()
+            ev_confidence = "confirmed"
+        else:
+            # No EXIF → preserve current behavior (end of timeline)
+            ev_sort_score = _EVIDENCE_SCORE
+            ev_ts_hard    = upload_dt.isoformat() if upload_dt else None
+            ev_confidence = "high"
+
         events.append(_Event(
             description=f"[Evidence] {ev['filename']}",
             source_ids=[{"type": "evidence", "id": ev["id"]}],
             source="metadata",
-            confidence_state="confirmed",
-            explicit_dt=upload_dt,
-            sort_score=_EVIDENCE_SCORE,
-            timestamp_hard=upload_dt.isoformat() if upload_dt else None,
+            confidence_state=ev_confidence,
+            explicit_dt=capture_dt or upload_dt,
+            sort_score=ev_sort_score,
+            timestamp_hard=ev_ts_hard,
             reference_label=None,
             relation=None,
             offset_sec=0,
-            event_types=_event_types(ev.get("filename", "")),
+            event_types=set(),
             is_evidence=True,
             is_relative=False,
         ))
@@ -647,34 +674,25 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
                 ev.source = "witness-relative"
 
     # ── Phase 4: Sort and output ───────────────────────────────────────────────
-    incident = [e for e in events if not e.is_evidence]
-    evidence = [e for e in events if e.is_evidence]
+    # Evidence with EXIF capture time → treat as incident events (interleaved)
+    # Evidence without EXIF → append at end (upload time fallback)
+    incident = [e for e in events if not e.is_evidence or (e.sort_score is not None and e.sort_score < _EVIDENCE_SCORE)]
+    evidence_end = [e for e in events if e.is_evidence and e.sort_score == _EVIDENCE_SCORE]
 
     # Events still without sort_score (no temporal info at all) go to the end
-    incident_max = max((e.sort_score for e in incident if e.sort_score is not None), default=0.0)
+    incident_max = max((e.sort_score for e in incident if e.sort_score is not None and e.sort_score < _EVIDENCE_SCORE), default=0.0)
     for i, ev in enumerate(incident):
         if ev.sort_score is None:
             ev.sort_score = incident_max + (i + 1) * 30
 
     incident.sort(key=lambda e: (e.sort_score,))
 
+    # Final: incident events (including EXIF-anchored evidence) + unanchored evidence at end
+    ordered = incident + evidence_end
+
     final: List[Dict] = []
     order = 1
-    for ev in incident:
-        final.append({
-            "id":               str(uuid.uuid4()),
-            "case_id":          case_id,
-            "description":      ev.description,
-            "timestamp_hard":   ev.timestamp_hard,
-            "relative_order":   order,
-            "source":           ev.source,
-            "confidence_state": ev.confidence_state,
-            "conflicts_with":   [],
-            "source_ids":       ev.source_ids,
-        })
-        order += 1
-
-    for ev in evidence:
+    for ev in ordered:
         final.append({
             "id":               str(uuid.uuid4()),
             "case_id":          case_id,
@@ -728,8 +746,8 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
 
     logger.info(
         f"Timeline [{case_id}]: {len(final)} events — "
-        f"{len([e for e in incident if e.explicit_dt])} absolute, "
+        f"{len([e for e in incident if e.explicit_dt and not e.is_evidence])} absolute, "
         f"{len([e for e in incident if e.is_relative])} relative, "
-        f"{len(evidence)} evidence"
+        f"{len(evidence_rows)} evidence"
     )
     return final
