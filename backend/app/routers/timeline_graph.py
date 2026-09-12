@@ -76,9 +76,15 @@ async def build_case_timeline(case_id: str):
 
     return {
         "success": True,
+        # Primary key (correct)
         "event_count": len(events),
+        # Alias keys for frontend compatibility (Timeline.jsx reads these)
+        "events_created": len(events),
+        "total_events": len(events),
+        # Breakdown
         "confirmed_events": confirmed,
         "conflict_events": conflicts,
+        "relative_events": sum(1 for e in events if e.get("source") == "witness-relative"),
     }
 
 

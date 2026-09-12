@@ -26,20 +26,58 @@ const FILTER_OPTIONS = [
 
 /* ─── Helpers ─── */
 
-function formatTimestamp(ts) {
-  if (!ts) return null;
-  const d = new Date(ts);
-  if (isNaN(d.getTime())) return ts;
-  const months = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-  ];
-  const day = String(d.getDate()).padStart(2, "0");
-  const mon = months[d.getMonth()];
-  const year = d.getFullYear();
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${day} ${mon} ${year} · ${hh}:${mm}`;
+function formatEventTime(event) {
+  if (!event.timestamp_hard) {
+    return `Relative order #${event.relative_order ?? "?"}`;
+  }
+
+  const dt = new Date(event.timestamp_hard);
+  if (isNaN(dt.getTime())) {
+    return `Relative order #${event.relative_order ?? "?"}`;
+  }
+
+  // Evidence (metadata): show full date + time — upload time is reliable
+  if (event.source === "metadata") {
+    return (
+      dt.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }) +
+      " · " +
+      dt.toLocaleTimeString("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    );
+  }
+
+  // Witness direct: show only time — date may be inferred from EXIF
+  if (event.source === "witness-direct") {
+    return dt.toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  // Witness relative (anchored): show time with ≈ prefix
+  if (event.source === "witness-relative") {
+    return (
+      "≈" +
+      dt.toLocaleTimeString("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    );
+  }
+
+  // Default: full datetime
+  return dt.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function getSourceBadge(source) {
@@ -225,7 +263,7 @@ export default function Timeline() {
         {/* Result/error */}
         {runResult && (
           <p style={{ fontSize: "13px", color: "var(--success)", marginBottom: "12px" }}>
-            {runResult.events_created || runResult.total_events || 0} events ordered.
+            {runResult.events_created || runResult.total_events || runResult.event_count || 0} events ordered.
           </p>
         )}
         {runError && (
@@ -412,9 +450,7 @@ export default function Timeline() {
                           : "var(--text-muted)",
                       }}
                     >
-                      {event.timestamp_hard
-                        ? formatTimestamp(event.timestamp_hard)
-                        : `Relative order #${event.relative_order ?? "?"}`}
+                      {formatEventTime(event)}
                     </div>
 
                     {/* Description */}

@@ -494,23 +494,38 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
         for entry in (stmt.get("temporal_sequence") or []):
             raw = entry.get("event_text", "")
             abs_str = entry.get("absolute_time")
+            normalized_hhmm = entry.get("absolute_time_normalized")
 
             # Resolve explicit time
             explicit_dt: Optional[datetime] = None
             had_full_datetime = False
+
+            # Step 1: Try full datetime parse (handles EXIF-style "2026-09-09T20:30:00")
             if abs_str:
                 explicit_dt = _parse_full(abs_str)
                 if explicit_dt:
                     had_full_datetime = True
-                else:
-                    t = _parse_time(abs_str)
-                    if t and case_date:
-                        # Bug 4: midnight → end of day, not start
-                        if 'midnight' in (abs_str or '').lower():
-                            explicit_dt = datetime.combine(case_date, datetime.strptime("23:59:59", "%H:%M:%S").time())
-                        else:
-                            explicit_dt = datetime.combine(case_date, t)
 
+            # Step 2: Use pre-normalized HH:MM from temporal.py (most reliable for
+            #         time-only expressions like "around 8:10 PM" -> "20:10")
+            if not explicit_dt and normalized_hhmm and case_date:
+                try:
+                    from datetime import time as time_obj
+                    h, m = map(int, normalized_hhmm.split(":"))
+                    explicit_dt = datetime.combine(case_date, time_obj(h, m))
+                except (ValueError, TypeError):
+                    pass
+
+            # Step 3: Check abs_str with _parse_time
+            if not explicit_dt and abs_str:
+                t = _parse_time(abs_str)
+                if t and case_date:
+                    if 'midnight' in (abs_str or '').lower():
+                        explicit_dt = datetime.combine(case_date, datetime.strptime("23:59:59", "%H:%M:%S").time())
+                    else:
+                        explicit_dt = datetime.combine(case_date, t)
+
+            # Step 4: Regex fallback on raw text
             if not explicit_dt:
                 for m in _TIME_IN_TEXT.finditer(raw):
                     t = _parse_time(m.group(0))
@@ -521,10 +536,10 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
                             explicit_dt = datetime.combine(case_date, t)
                         break
 
-            # Bug 5: only set timestamp_hard for full datetime sources
-            # Time-only inferred from "9 PM" + case_date → no hard timestamp
-            # (prevents wrong date display due to timezone shift)
-            ts_hard = explicit_dt.isoformat() if (explicit_dt and had_full_datetime) else None
+            # RESTORED: Set timestamp_hard for all events with a resolved datetime.
+            # Previously suppressed to avoid IST timezone shift — now handled in
+            # the frontend by showing only the time portion for witness-direct events.
+            ts_hard = explicit_dt.isoformat() if explicit_dt else None
             rel, off = _temporal_relation(raw)
             ref_raw = _reference_label(raw)
 
