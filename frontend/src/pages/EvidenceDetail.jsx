@@ -150,23 +150,21 @@ export default function EvidenceDetail() {
 
   useEffect(() => {
     fetchEvidence();
-  }, [evidenceId]);
+  }, [caseId, evidenceId]);
 
   async function fetchEvidence() {
+    if (!caseId || !evidenceId) return;
     setLoading(true);
     try {
-      const { data, error: err } = await supabase
-        .from("evidence")
-        .select("*")
-        .eq("id", evidenceId)
-        .single();
+      const res = await apiClient(`/evidence/cases/${caseId}`);
+      const list = res.data?.evidence || res.evidence || [];
+      const item = list.find((e) => String(e.id) === String(evidenceId));
+      if (!item) throw new Error("Evidence not found");
 
-      if (err) throw err;
+      setEvidence(item);
 
-      setEvidence(data);
-
-      const tabs = TABS_BY_TYPE[data.type] || ["Blockchain"];
-      setActiveTab(tabs[0]);
+      const tabs = TABS_BY_TYPE[item.type] || ["Blockchain"];
+      setActiveTab((prev) => prev || tabs[0]);
     } catch (e) {
       setError("Failed to load evidence.");
     } finally {
@@ -1059,7 +1057,7 @@ export default function EvidenceDetail() {
           {evidence.filename}
         </h1>
 
-        <div style={{ display: "flex", gap: "10px", marginBottom: "28px" }}>
+        <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
           <span
             style={{
               padding: "4px 12px",
@@ -1086,6 +1084,155 @@ export default function EvidenceDetail() {
             {evidence.status}
           </span>
         </div>
+
+        {/* Priority Ranking Section */}
+        {evidence.priority && (
+          <div
+            style={{
+              padding: "12px 16px",
+              background: "var(--bg-elevated)",
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              marginTop: 12,
+              marginBottom: 24,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                fontFamily: "'JetBrains Mono', monospace",
+                marginBottom: 8,
+                textTransform: "uppercase",
+                letterSpacing: 1,
+              }}
+            >
+              Evidence Priority
+            </div>
+
+            {/* Priority badge + score */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span
+                style={{
+                  padding: "3px 10px",
+                  borderRadius: 4,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  fontFamily: "'JetBrains Mono', monospace",
+                  background: (() => {
+                    const p = (evidence.priority || "").toUpperCase();
+                    if (p === "CRITICAL") return "#DC262622";
+                    if (p === "HIGH") return "#D9770622";
+                    if (p === "MEDIUM") return "#0284C722";
+                    return "#6B728022";
+                  })(),
+                  color: (() => {
+                    const p = (evidence.priority || "").toUpperCase();
+                    if (p === "CRITICAL") return "#DC2626";
+                    if (p === "HIGH") return "#D97706";
+                    if (p === "MEDIUM") return "#0284C7";
+                    return "#6B7280";
+                  })(),
+                }}
+              >
+                {(evidence.priority || "LOW").toUpperCase()}
+              </span>
+              <span
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 20,
+                  fontWeight: 700,
+                  color: "var(--text-primary)",
+                }}
+              >
+                {evidence.priority_score ?? 0}
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  /100
+                </span>
+              </span>
+            </div>
+
+            {/* Breakdown bar */}
+            {evidence.priority_breakdown && (
+              <div style={{ marginTop: 10 }}>
+                {Object.entries({
+                  "AI Confidence": {
+                    score: evidence.priority_breakdown.analysis_confidence ?? 0,
+                    max: 30,
+                  },
+                  Blockchain: {
+                    score: evidence.priority_breakdown.blockchain ?? 0,
+                    max: 20,
+                  },
+                  Detections: {
+                    score: evidence.priority_breakdown.detections ?? 0,
+                    max: 15,
+                  },
+                  Contradictions: {
+                    score:
+                      evidence.priority_breakdown.contradiction_involvement ??
+                      0,
+                    max: 20,
+                  },
+                  "KG Centrality": {
+                    score: evidence.priority_breakdown.kg_centrality ?? 0,
+                    max: 15,
+                  },
+                }).map(([label, { score, max }]) => (
+                  <div
+                    key={label}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      marginBottom: 4,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 10,
+                        width: 100,
+                        color: "var(--text-muted)",
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}
+                    >
+                      {label}
+                    </span>
+                    <div
+                      style={{
+                        flex: 1,
+                        height: 4,
+                        background: "var(--bg-muted)",
+                        borderRadius: 2,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${max > 0 ? Math.min((score / max) * 100, 100) : 0}%`,
+                          background: "var(--accent)",
+                          borderRadius: 2,
+                        }}
+                      />
+                    </div>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        width: 32,
+                        textAlign: "right",
+                        fontFamily: "'JetBrains Mono', monospace",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      {score}/{max}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Tab bar */}
         <div

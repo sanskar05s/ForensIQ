@@ -151,38 +151,41 @@ export default function EvidenceCard({ evidence, onClick }) {
           </p>
         )}
 
-      {evidence.priority_score > 0 && (
-        <div style={{ marginTop: "8px" }}>
-          <span
-            style={{
-              padding: "3px 10px",
-              borderRadius: "999px",
-              fontSize: "10px",
-              fontWeight: 600,
-              textTransform: "uppercase",
-              color: "#fff",
-              background:
-                evidence.priority === "critical"
-                  ? "var(--critical)"
-                  : evidence.priority === "high"
-                  ? "var(--warning)"
-                  : evidence.priority === "medium"
-                  ? "var(--info)"
-                  : "var(--text-muted)",
-            }}
-          >
-            {evidence.priority}
-          </span>
-          <p
-            style={{
-              marginTop: "4px",
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: "10px",
-              color: "var(--text-muted)",
-            }}
-          >
-            Priority: {evidence.priority_score}/100
-          </p>
+      {/* Priority Badge — shown when priority data is available */}
+      {evidence.priority && (
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            padding: "2px 8px",
+            borderRadius: 4,
+            fontSize: 11,
+            fontWeight: 600,
+            fontFamily: "'JetBrains Mono', monospace",
+            marginTop: 8,
+            background: (() => {
+              const p = (evidence.priority || "").toUpperCase();
+              if (p === "CRITICAL") return "#DC262622";
+              if (p === "HIGH") return "#D9770622";
+              if (p === "MEDIUM") return "#0284C722";
+              return "#6B728022";
+            })(),
+            color: (() => {
+              const p = (evidence.priority || "").toUpperCase();
+              if (p === "CRITICAL") return "#DC2626";
+              if (p === "HIGH") return "#D97706";
+              if (p === "MEDIUM") return "#0284C7";
+              return "#6B7280";
+            })(),
+          }}
+        >
+          {(evidence.priority || "LOW").toUpperCase()}
+          {evidence.priority_score !== undefined && (
+            <span style={{ opacity: 0.85, marginLeft: 4 }}>
+              · {evidence.priority_score}/100
+            </span>
+          )}
         </div>
       )}
     </div>

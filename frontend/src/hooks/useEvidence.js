@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getEvidenceByCase } from "../supabase/db";
+import { apiClient } from "../api/client";
 
 export function useEvidence(caseId) {
   const [evidence, setEvidence] = useState([]);
@@ -13,7 +13,8 @@ export function useEvidence(caseId) {
       setLoading(true);
       setError(null);
 
-      const data = await getEvidenceByCase(caseId);
+      const result = await apiClient(`/evidence/cases/${caseId}`);
+      const data = result.data?.evidence || result.evidence || [];
       setEvidence(data);
     } catch (err) {
       setError(err);
