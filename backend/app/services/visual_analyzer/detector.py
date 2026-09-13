@@ -35,6 +35,7 @@ def detect_objects(image_path: str, threshold: float = 0.40) -> list:
     )
 
     detections = []
+    det_idx = 0
 
     for result in results:
         for box in result.boxes:
@@ -61,9 +62,11 @@ def detect_objects(image_path: str, threshold: float = 0.40) -> list:
                         "label": label,
                         "confidence": round(confidence, 3),
                         "bbox": [round(x, 1) for x in bbox],
+                        "detection_index": det_idx,
                         "analysis": analysis,
                         "model_used": "YOLOv8n",
                     }
                 )
+                det_idx += 1
 
     return detections

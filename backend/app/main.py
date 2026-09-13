@@ -16,7 +16,7 @@ from app.routers import assistant, activity_log
 
 from app.routers import report
 
-from app.routers import leads, hypotheses, provenance, claim_links
+from app.routers import leads, hypotheses, provenance, claim_links, identification
 
 
 app = FastAPI(
@@ -66,6 +66,7 @@ app.include_router(leads.router, prefix="/api")
 app.include_router(hypotheses.router, prefix="/api")
 app.include_router(provenance.router, prefix="/api")
 app.include_router(claim_links.router, prefix="/api")
+app.include_router(identification.router, prefix="/api")
 
 @app.get("/")
 def root():

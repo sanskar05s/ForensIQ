@@ -574,9 +574,33 @@ CREATE INDEX idx_claim_links_case     ON evidence_claim_links (case_id);
 CREATE INDEX idx_claim_links_evidence ON evidence_claim_links (evidence_id);
 CREATE INDEX idx_claim_links_statement ON evidence_claim_links (statement_id);
 
+-- ─── Detection Identifications (VEI-1) ────────────────────────────────────────
+-- Human identification records for YOLO detections.
+-- Stored SEPARATELY from witness_statements and evidence.
+-- Each row records one investigator/witness identification of one detection.
 
+CREATE TABLE IF NOT EXISTS detection_identifications (
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id               UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    evidence_id           UUID NOT NULL REFERENCES evidence(id) ON DELETE CASCADE,
+    detection_index       INT NOT NULL,        -- which detection in object_detections array
+    canonical_name        TEXT NOT NULL,       -- "Rahul Sharma", "Black Scorpio", "Victim's bag"
+    alias                 TEXT,                -- shorter alias, e.g. "Rahul"
+    identified_by         TEXT NOT NULL,       -- witness label OR "Investigator"
+    identification_source TEXT NOT NULL CHECK (
+        identification_source IN ('witness', 'investigator', 'document', 'other')
+    ),
+    statement_id          UUID REFERENCES witness_statements(id) ON DELETE SET NULL,
+    notes                 TEXT,               -- optional investigator annotation
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
+-- One identification per (evidence, detection) is the common case,
+-- but two witnesses could identify the same detection independently.
+-- No UNIQUE constraint — multiple identifications per detection allowed.
 
+CREATE INDEX IF NOT EXISTS idx_det_id_evidence ON detection_identifications (evidence_id);
+CREATE INDEX IF NOT EXISTS idx_det_id_case     ON detection_identifications (case_id);
+CREATE INDEX IF NOT EXISTS idx_det_id_stmt     ON detection_identifications (statement_id);
 
-
-
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.detection_identifications TO service_role;
