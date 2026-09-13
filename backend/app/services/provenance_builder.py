@@ -97,8 +97,6 @@ def build_evidence_provenance(evidence_id: str, case_id: str, supabase) -> list:
             break  # one notification is enough
 
     # Step 6: Knowledge Graph
-    # REMOVE THIS:
-    # REPLACE WITH THIS:
     kg_result = supabase.table("knowledge_graphs")\
         .select("nodes, generated_at")\
         .eq("case_id", case_id)\
@@ -124,19 +122,6 @@ def build_evidence_provenance(evidence_id: str, case_id: str, supabase) -> list:
                     f"{len(linked_nodes)} entities from this evidence "
                     "added to the Knowledge Graph"
                 ),
-                "icon": "Share2",
-                "status": "complete"
-            })
-
-    if kg:
-        nodes = kg.get("nodes") or []
-        obj_labels = {d.get("label","").lower() for d in (ev.get("object_detections") or [])}
-        linked_nodes = [n for n in nodes if n.get("label","").lower() in obj_labels]
-        if linked_nodes:
-            events.append({
-                "step": "Knowledge Graph Linked",
-                "timestamp": kg.get("generated_at"),
-                "description": f"{len(linked_nodes)} entities from this evidence added to the Knowledge Graph",
                 "icon": "Share2",
                 "status": "complete"
             })

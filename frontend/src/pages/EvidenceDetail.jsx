@@ -14,6 +14,7 @@ import {
   GitMerge,
   Share2,
   Link,
+  Activity,
 } from "lucide-react";
 
 import AppShell from "../components/layout/AppShell";
@@ -194,8 +195,9 @@ export default function EvidenceDetail() {
         `/provenance/cases/${caseId}/evidence/${evidenceId}`
       );
       setJourney(res);
-    } catch {
-      setJourney({ steps: [] });
+    } catch (err) {
+      console.error('Provenance fetch error:', err);
+      setJourney({ steps: [], journey: [] });
     } finally {
       setJourneyLoading(false);
     }
@@ -829,65 +831,112 @@ export default function EvidenceDetail() {
       );
     }
 
-    const steps = journey?.steps || [];
+    // Accept both "steps" (frontend expectation) and "journey" (backend key)
+    const steps = journey?.steps || journey?.journey || [];
     if (steps.length === 0) {
       return <p style={emptyStyle}>No provenance data yet.</p>;
     }
 
-    const iconMap = {
-      upload: { icon: Upload, color: "var(--accent)" },
-      hash_computed: { icon: Hash, color: "var(--info)" },
-      ai_analysis: { icon: Cpu, color: "var(--success)" },
-      blockchain_anchored: { icon: Shield, color: "var(--success)" },
-      contradiction_linked: { icon: GitMerge, color: "var(--warning)" },
-      graph_linked: { icon: Share2, color: "var(--info)" },
-      claim_linked: { icon: Link, color: "var(--accent)" },
-    };
-
     return (
-      <div style={{ position: "relative", paddingLeft: "40px" }}>
-        {/* Vertical line */}
-        <div
-          style={{
-            position: "absolute",
-            left: "15px",
-            top: "4px",
-            bottom: "4px",
-            width: "2px",
-            background: "var(--border)",
-          }}
-        />
+      <div style={{ position: "relative" }}>
         {steps.map((step, idx) => {
-          const mapping = iconMap[step.type] || { icon: Clock, color: "var(--text-muted)" };
-          const IconComp = mapping.icon;
-          const dotColor = step.status === "flagged" ? "var(--warning)" : mapping.color;
+          // Backend returns: { step, description, timestamp, icon, status }
+          // Frontend expected: { name, type, description, timestamp, status }
+          // Normalize: accept both formats
+          const stepTitle = step.name || step.step || "Step";
+          const stepIcon = step.type || step.icon || "Activity";
+          const stepDesc = step.description || "";
+          const stepTime = step.timestamp;
+          const stepStatus = step.status || "complete";
+
+          // Icon mapping (backend returns Lucide icon names directly)
+          const IconComponent =
+            {
+              Upload: Upload,
+              Hash: Hash,
+              Cpu: Cpu,
+              Shield: Shield,
+              GitMerge: GitMerge,
+              Share2: Share2,
+              Link: Link,
+              upload: Upload, // lowercase fallback
+              hash: Hash,
+              cpu: Cpu,
+              shield: Shield,
+              gitmerge: GitMerge,
+              share2: Share2,
+              link: Link,
+              // type-based mapping (if frontend sends type instead of icon)
+              hash_computed: Hash,
+              analysis: Cpu,
+              blockchain: Shield,
+              contradiction: GitMerge,
+              knowledge_graph: Share2,
+              claim: Link,
+            }[stepIcon] || Activity;
+
+          const isConflict = stepStatus === "flagged";
+
           return (
-            <div key={idx} style={{ position: "relative", marginBottom: "24px" }}>
+            <div
+              key={idx}
+              style={{
+                display: "flex",
+                gap: 12,
+                padding: "8px 0",
+                borderBottom: "1px solid var(--border)",
+                alignItems: "flex-start",
+              }}
+            >
+              {/* Icon circle */}
               <div
                 style={{
-                  position: "absolute",
-                  left: "-33px",
-                  top: "2px",
-                  width: "28px",
-                  height: "28px",
+                  width: 32,
+                  height: 32,
                   borderRadius: "50%",
-                  background: "var(--bg-surface)",
-                  border: `2px solid ${dotColor}`,
+                  flexShrink: 0,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
+                  background: isConflict ? "#D9770622" : "var(--accent-dim)",
+                  color: isConflict ? "#D97706" : "var(--accent)",
                 }}
               >
-                <IconComp size={14} color={dotColor} />
+                <IconComponent size={16} />
               </div>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: "14px" }}>{step.name}</div>
-                <div style={{ color: "var(--text-secondary)", fontSize: "13px", marginTop: "2px" }}>
-                  {step.description}
+
+              {/* Content */}
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  {stepTitle}
                 </div>
-                {step.timestamp && (
-                  <div style={{ color: "var(--text-muted)", fontSize: "11px", marginTop: "4px", fontFamily: "'JetBrains Mono', monospace" }}>
-                    {relativeTime(step.timestamp)}
+                {stepDesc && (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-secondary)",
+                      marginTop: 2,
+                    }}
+                  >
+                    {stepDesc}
+                  </div>
+                )}
+                {stepTime && (
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "var(--text-muted)",
+                      fontFamily: "'JetBrains Mono', monospace",
+                      marginTop: 3,
+                    }}
+                  >
+                    {relativeTime(stepTime)}
                   </div>
                 )}
               </div>

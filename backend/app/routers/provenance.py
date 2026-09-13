@@ -11,4 +11,7 @@ async def get_provenance(case_id: str, evidence_id: str):
     journey = build_evidence_provenance(evidence_id, case_id, supabase)
     if not journey:
         raise HTTPException(status_code=404, detail="Evidence not found")
-    return {"journey": journey}
+    return {
+        "journey": journey,   # keep original key
+        "steps":   journey,   # alias key for frontend compatibility
+    }
