@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Shield,
@@ -22,6 +22,21 @@ import Spinner from "../components/loading/Spinner";
 import { supabase } from "../supabase/client";
 import { apiClient } from "../api/client";
 import { relativeTime } from "../utils/relativeTime";
+
+const API_BASE = "http://127.0.0.1:8000";
+
+const apiGet = async (endpoint) => {
+  const res = await apiClient(endpoint);
+  return { data: res, ...res };
+};
+
+const apiPost = async (endpoint, body) => {
+  const res = await apiClient(endpoint, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return { data: res, ...res };
+};
 
 /* ─── Tab definitions per evidence type ─── */
 
@@ -131,6 +146,34 @@ export default function EvidenceDetail() {
   const [expandedBbox, setExpandedBbox] = useState({});
   const [expandedXai, setExpandedXai] = useState({});
 
+  /* VEI-2 Objects tab state */
+  const [identifications, setIdentifications] = useState([]);
+  const [overlayData, setOverlayData] = useState([]);
+  const [loadingIdentifications, setLoadingIdentifications] = useState(false);
+
+  /* Full image overlay modal state */
+  const [overlayModal, setOverlayModal] = useState({
+    open: false,
+    selectedIndex: null,
+    imageUrl: null,
+  });
+  const fullImgRef = useRef(null);
+  const [imgDimensions, setImgDimensions] = useState({});
+
+  /* Identification modal state */
+  const [idModal, setIdModal] = useState({
+    open: false,
+    detectionIndex: null,
+    detectionLabel: "",
+    canonicalName: "",
+    alias: "",
+    identifiedBy: "",
+    source: "witness",
+    statementId: "",
+    notes: "",
+    saving: false,
+  });
+
   /* Preview tab state */
   const [signedUrl, setSignedUrl] = useState(null);
   const [urlLoading, setUrlLoading] = useState(false);
@@ -148,6 +191,85 @@ export default function EvidenceDetail() {
   /* Blockchain verify state */
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState(null);
+
+  useEffect(() => {
+    if ((activeTab !== "objects" && activeTab !== "Objects") || !evidence?.id) return;
+    setLoadingIdentifications(true);
+    Promise.all([
+      apiGet(`/identification/cases/${caseId}/evidence/${evidence.id}/overlay-data`),
+      apiGet(`/identification/cases/${caseId}/evidence/${evidence.id}`),
+    ])
+      .then(([overlayRes, idRes]) => {
+        setOverlayData(overlayRes.data?.overlay || overlayRes.overlay || []);
+        setIdentifications(idRes.data?.identifications || idRes.identifications || []);
+      })
+      .catch((err) => {
+        console.error("Failed to load identification data:", err);
+      })
+      .finally(() => setLoadingIdentifications(false));
+  }, [activeTab, evidence?.id, caseId]);
+
+  const openFullImageOverlay = async (detIndex) => {
+    let url = signedUrl;
+    if (!url) {
+      try {
+        const res = await apiGet(
+          `/blockchain/cases/${caseId}/evidence/${evidence.id}/signed-url`
+        );
+        url = res.data?.url || res.url;
+      } catch (err) {
+        console.error("Failed to get signed URL for overlay:", err);
+      }
+    }
+    setOverlayModal({ open: true, selectedIndex: detIndex, imageUrl: url });
+  };
+
+  const openIdentificationModal = (detIndex, label) => {
+    const existing = identifications.find((id) => id.detection_index === detIndex);
+    setIdModal({
+      open: true,
+      detectionIndex: detIndex,
+      detectionLabel: label,
+      canonicalName: existing?.canonical_name || "",
+      alias: existing?.alias || "",
+      identifiedBy: existing?.identified_by || "",
+      source: existing?.identification_source || "witness",
+      statementId: existing?.statement_id || "",
+      notes: existing?.notes || "",
+      saving: false,
+    });
+  };
+
+  const saveIdentification = async () => {
+    if (!idModal.canonicalName.trim() || !idModal.identifiedBy.trim()) return;
+    setIdModal((m) => ({ ...m, saving: true }));
+    try {
+      await apiPost(
+        `/identification/cases/${caseId}/evidence/${evidence.id}`,
+        {
+          detection_index: idModal.detectionIndex,
+          canonical_name: idModal.canonicalName.trim(),
+          alias: idModal.alias.trim() || null,
+          identified_by: idModal.identifiedBy.trim(),
+          identification_source: idModal.source,
+          statement_id: idModal.statementId || null,
+          notes: idModal.notes.trim() || null,
+        }
+      );
+      // Refresh identifications and overlay data
+      const [idRes, overlayRes] = await Promise.all([
+        apiGet(`/identification/cases/${caseId}/evidence/${evidence.id}`),
+        apiGet(`/identification/cases/${caseId}/evidence/${evidence.id}/overlay-data`),
+      ]);
+      setIdentifications(idRes.data?.identifications || idRes.identifications || []);
+      setOverlayData(overlayRes.data?.overlay || overlayRes.overlay || []);
+      setIdModal((m) => ({ ...m, open: false }));
+    } catch (err) {
+      console.error("Failed to save identification:", err);
+    } finally {
+      setIdModal((m) => ({ ...m, saving: false }));
+    }
+  };
 
   useEffect(() => {
     fetchEvidence();
@@ -300,74 +422,695 @@ export default function EvidenceDetail() {
     if (!detections || detections.length === 0) {
       return <p style={emptyStyle}>No objects detected above confidence threshold.</p>;
     }
-    return detections.map((item, idx) => (
-      <div key={idx} style={cardStyle}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-          <span style={{ fontWeight: 600, fontSize: "15px" }}>{item.label}</span>
-          <ConfidencePill confidence={item.confidence} />
-        </div>
 
-        <button
-          onClick={() => toggleBbox(idx)}
-          style={{
-            background: "transparent",
-            border: "none",
-            color: "var(--text-secondary)",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-            fontSize: "12px",
-            padding: "4px 0",
-          }}
-        >
-          {expandedBbox[idx] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          Bounding Box
-        </button>
-        {expandedBbox[idx] && item.bbox && (
+    return (
+      <>
+        {/* Objects Tab */}
+        {detections.map((det, i) => {
+          const detIndex = det.detection_index ?? i;
+          const overlayDet = overlayData.find((o) => o.detection_index === detIndex);
+          const detIdentifications = identifications.filter(
+            (id) => id.detection_index === detIndex
+          );
+          const isIdentified = detIdentifications.length > 0;
+
+          return (
+            <div
+              key={detIndex}
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                overflow: "hidden",
+                background: "var(--bg-elevated)",
+                marginBottom: 12,
+              }}
+            >
+              {/* Crop thumbnail */}
+              <div
+                style={{
+                  width: "100%",
+                  height: 120,
+                  background: "var(--bg-muted)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  overflow: "hidden",
+                  position: "relative",
+                }}
+              >
+                <img
+                  src={`${API_BASE}/api/identification/cases/${caseId}/evidence/${evidence.id}/crop/${detIndex}`}
+                  alt={`${det.label} detection`}
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "100%",
+                    objectFit: "contain",
+                  }}
+                  onError={(e) => {
+                    e.target.style.display = "none";
+                    if (e.target.nextSibling) {
+                      e.target.nextSibling.style.display = "flex";
+                    }
+                  }}
+                />
+                {/* Fallback when crop unavailable */}
+                <div
+                  style={{
+                    display: "none",
+                    width: "100%",
+                    height: "100%",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "var(--text-muted)",
+                    fontSize: 11,
+                  }}
+                >
+                  No preview
+                </div>
+              </div>
+
+              {/* Detection info */}
+              <div style={{ padding: "10px 12px" }}>
+                {/* AI detection header */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 6,
+                  }}
+                >
+                  <div>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                        display: "block",
+                        marginBottom: 2,
+                      }}
+                    >
+                      AI detected
+                    </span>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        fontSize: 14,
+                        color: "var(--text-primary)",
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {det.label}
+                    </span>
+                  </div>
+                  <span
+                    style={{
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: 12,
+                      color:
+                        det.confidence >= 0.7
+                          ? "var(--success)"
+                          : "var(--warning)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {Math.round(det.confidence * 100)}%
+                  </span>
+                </div>
+
+                {/* Human identifications */}
+                {isIdentified ? (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      padding: "8px",
+                      background: "var(--accent-dim, rgba(37,99,235,0.15))",
+                      borderRadius: 6,
+                      borderLeft: "3px solid var(--accent)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "var(--accent)",
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                        marginBottom: 4,
+                        fontWeight: 600,
+                      }}
+                    >
+                      Human identification
+                    </div>
+                    {detIdentifications.map((ident, j) => (
+                      <div
+                        key={j}
+                        style={{
+                          marginBottom:
+                            j < detIdentifications.length - 1 ? 6 : 0,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: "var(--text-primary)",
+                          }}
+                        >
+                          {ident.canonical_name}
+                          {ident.alias && (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                                marginLeft: 6,
+                              }}
+                            >
+                              ({ident.alias})
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--text-secondary)",
+                            marginTop: 2,
+                          }}
+                        >
+                          Identified by: {ident.identified_by}
+                          <span
+                            style={{
+                              marginLeft: 6,
+                              padding: "1px 6px",
+                              borderRadius: 4,
+                              background: "var(--bg-muted)",
+                              fontSize: 10,
+                              textTransform: "capitalize",
+                            }}
+                          >
+                            {ident.identification_source}
+                          </span>
+                        </div>
+                        {ident.notes && (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "var(--text-muted)",
+                              marginTop: 2,
+                              fontStyle: "italic",
+                            }}
+                          >
+                            {ident.notes}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      marginTop: 6,
+                      fontStyle: "italic",
+                    }}
+                  >
+                    Not identified
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <button
+                    onClick={() => openFullImageOverlay(detIndex)}
+                    style={{
+                      flex: 1,
+                      padding: "6px 0",
+                      fontSize: 11,
+                      background: "var(--bg-muted)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 6,
+                      color: "var(--text-secondary)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    View in image
+                  </button>
+                  <button
+                    onClick={() => openIdentificationModal(detIndex, det.label)}
+                    style={{
+                      flex: 1,
+                      padding: "6px 0",
+                      fontSize: 11,
+                      background: isIdentified
+                        ? "transparent"
+                        : "var(--accent-dim, rgba(37,99,235,0.15))",
+                      border: `1px solid ${
+                        isIdentified ? "var(--border)" : "var(--accent)"
+                      }`,
+                      borderRadius: 6,
+                      color: isIdentified
+                        ? "var(--text-muted)"
+                        : "var(--accent)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {isIdentified ? "Edit ID" : "Add ID"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Full image overlay modal */}
+        {overlayModal.open && (
           <div
+            onClick={() =>
+              setOverlayModal({
+                open: false,
+                selectedIndex: null,
+                imageUrl: null,
+              })
+            }
             style={{
-              ...monoStyle,
-              fontSize: "12px",
-              color: "var(--text-secondary)",
-              padding: "8px 0 4px 18px",
+              position: "fixed",
+              inset: 0,
+              zIndex: 9998,
+              background: "rgba(0,0,0,0.85)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
-            [{item.bbox.map((v) => v.toFixed(1)).join(", ")}]
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: "relative",
+                maxWidth: "90vw",
+                maxHeight: "85vh",
+              }}
+            >
+              {/* Original image */}
+              <img
+                src={overlayModal.imageUrl}
+                alt="Evidence"
+                ref={fullImgRef}
+                onLoad={() => {
+                  if (fullImgRef.current) {
+                    setImgDimensions({
+                      w: fullImgRef.current.naturalWidth,
+                      h: fullImgRef.current.naturalHeight,
+                      dw: fullImgRef.current.width,
+                      dh: fullImgRef.current.height,
+                    });
+                  }
+                }}
+                style={{
+                  display: "block",
+                  maxWidth: "90vw",
+                  maxHeight: "85vh",
+                }}
+              />
+
+              {/* SVG overlay for bounding boxes */}
+              {imgDimensions.dw && (
+                <svg
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    width: imgDimensions.dw,
+                    height: imgDimensions.dh,
+                  }}
+                  viewBox={`0 0 ${imgDimensions.dw} ${imgDimensions.dh}`}
+                >
+                  {overlayData.map((det) => {
+                    if (!det.bbox || det.bbox.length < 4) return null;
+                    const isSelected =
+                      det.detection_index === overlayModal.selectedIndex;
+                    const scaleX = imgDimensions.dw / imgDimensions.w;
+                    const scaleY = imgDimensions.dh / imgDimensions.h;
+
+                    // Handle both normalized and absolute bbox
+                    const [bx1, by1, bx2, by2] = det.bbox;
+                    const isNorm =
+                      bx1 <= 1 && by1 <= 1 && bx2 <= 1 && by2 <= 1;
+                    const rx = isNorm ? bx1 * imgDimensions.dw : bx1 * scaleX;
+                    const ry = isNorm ? by1 * imgDimensions.dh : by1 * scaleY;
+                    const rw = isNorm
+                      ? (bx2 - bx1) * imgDimensions.dw
+                      : (bx2 - bx1) * scaleX;
+                    const rh = isNorm
+                      ? (by2 - by1) * imgDimensions.dh
+                      : (by2 - by1) * scaleY;
+
+                    const detIdent = identifications.filter(
+                      (id) => id.detection_index === det.detection_index
+                    );
+                    const identName =
+                      detIdent[0]?.canonical_name ||
+                      det.identifications?.[0]?.canonical_name;
+
+                    return (
+                      <g
+                        key={det.detection_index}
+                        onClick={() =>
+                          setOverlayModal((m) => ({
+                            ...m,
+                            selectedIndex: det.detection_index,
+                          }))
+                        }
+                        style={{ cursor: "pointer" }}
+                      >
+                        <rect
+                          x={rx}
+                          y={ry}
+                          width={rw}
+                          height={rh}
+                          fill="none"
+                          stroke={
+                            isSelected ? "#3B82F6" : "rgba(255,255,255,0.35)"
+                          }
+                          strokeWidth={isSelected ? 3 : 1}
+                          rx={3}
+                        />
+                        {isSelected && (
+                          <text
+                            x={rx + 4}
+                            y={ry > 20 ? ry - 6 : ry + 16}
+                            fill="#3B82F6"
+                            fontSize={12}
+                            fontFamily="JetBrains Mono"
+                          >
+                            {det.label} {Math.round(det.confidence * 100)}%
+                            {identName ? ` • ${identName}` : ""}
+                          </text>
+                        )}
+                      </g>
+                    );
+                  })}
+                </svg>
+              )}
+
+              {/* Close button */}
+              <button
+                onClick={() =>
+                  setOverlayModal({
+                    open: false,
+                    selectedIndex: null,
+                    imageUrl: null,
+                  })
+                }
+                style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 8,
+                  background: "rgba(0,0,0,0.7)",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "50%",
+                  width: 28,
+                  height: 28,
+                  cursor: "pointer",
+                  fontSize: 16,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ×
+              </button>
+            </div>
           </div>
         )}
 
-        <button
-          onClick={() => toggleXai(idx)}
-          style={{
-            background: "transparent",
-            border: "none",
-            color: "var(--text-secondary)",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-            fontSize: "12px",
-            padding: "4px 0",
-          }}
-        >
-          {expandedXai[idx] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          XAI Reason
-        </button>
-        {expandedXai[idx] && (
+        {/* Identification modal */}
+        {idModal.open && (
           <div
             style={{
-              fontSize: "13px",
-              color: "var(--text-secondary)",
-              fontStyle: "italic",
-              padding: "8px 0 4px 18px",
+              position: "fixed",
+              inset: 0,
+              zIndex: 9999,
+              background: "rgba(0,0,0,0.7)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
-            {item.analysis?.summary || "No explanation available."}
+            <div
+              style={{
+                background: "var(--bg-surface)",
+                borderRadius: 12,
+                padding: 24,
+                width: 400,
+                border: "1px solid var(--border)",
+              }}
+            >
+              {/* Header */}
+              <div style={{ marginBottom: 16 }}>
+                <div
+                  style={{
+                    fontSize: 16,
+                    fontWeight: 700,
+                    color: "var(--text-primary)",
+                    fontFamily: "'Space Grotesk', sans-serif",
+                  }}
+                >
+                  Add Human Identification
+                </div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    marginTop: 4,
+                  }}
+                >
+                  AI detected: <strong>{idModal.detectionLabel}</strong>
+                  <br />
+                  This supplements the AI detection — it does not replace it.
+                  The original witness statement will NOT be modified.
+                </div>
+              </div>
+
+              {/* Form fields */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <label>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Name / Identifier *
+                  </div>
+                  <input
+                    value={idModal.canonicalName}
+                    onChange={(e) =>
+                      setIdModal((m) => ({
+                        ...m,
+                        canonicalName: e.target.value,
+                      }))
+                    }
+                    placeholder="e.g. Rahul Sharma, Black Scorpio, Victim's bag"
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      fontSize: 13,
+                      background: "var(--bg-elevated)",
+                      color: "var(--text-primary)",
+                      border: "1px solid var(--border)",
+                    }}
+                  />
+                </label>
+
+                <label>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Alias (optional)
+                  </div>
+                  <input
+                    value={idModal.alias}
+                    onChange={(e) =>
+                      setIdModal((m) => ({ ...m, alias: e.target.value }))
+                    }
+                    placeholder="e.g. Rahul"
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      fontSize: 13,
+                      background: "var(--bg-elevated)",
+                      color: "var(--text-primary)",
+                      border: "1px solid var(--border)",
+                    }}
+                  />
+                </label>
+
+                <label>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Identified by *
+                  </div>
+                  <input
+                    value={idModal.identifiedBy}
+                    onChange={(e) =>
+                      setIdModal((m) => ({
+                        ...m,
+                        identifiedBy: e.target.value,
+                      }))
+                    }
+                    placeholder="e.g. Guard Meena, Investigator"
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      fontSize: 13,
+                      background: "var(--bg-elevated)",
+                      color: "var(--text-primary)",
+                      border: "1px solid var(--border)",
+                    }}
+                  />
+                </label>
+
+                <label>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Identification source
+                  </div>
+                  <select
+                    value={idModal.source}
+                    onChange={(e) =>
+                      setIdModal((m) => ({ ...m, source: e.target.value }))
+                    }
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      fontSize: 13,
+                      background: "var(--bg-elevated)",
+                      color: "var(--text-primary)",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    <option value="witness">Witness</option>
+                    <option value="investigator">Investigator</option>
+                    <option value="document">Document / Evidence</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+
+                <label>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Notes (optional)
+                  </div>
+                  <textarea
+                    value={idModal.notes}
+                    onChange={(e) =>
+                      setIdModal((m) => ({ ...m, notes: e.target.value }))
+                    }
+                    placeholder="Optional annotation..."
+                    rows={2}
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      fontSize: 13,
+                      background: "var(--bg-elevated)",
+                      color: "var(--text-primary)",
+                      border: "1px solid var(--border)",
+                    }}
+                  />
+                </label>
+              </div>
+
+              {/* Forensic disclaimer */}
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: "8px 10px",
+                  background: "var(--bg-muted)",
+                  borderRadius: 6,
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                }}
+              >
+                ⚠ This identification supplements the AI detection. It is stored as a
+                separate investigation record. The AI did NOT identify{" "}
+                {idModal.canonicalName || "this object"}.
+              </div>
+
+              {/* Buttons */}
+              <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                <button
+                  onClick={() => setIdModal((m) => ({ ...m, open: false }))}
+                  style={{
+                    flex: 1,
+                    padding: "8px 0",
+                    background: "var(--bg-muted)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    fontSize: 13,
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveIdentification}
+                  disabled={
+                    idModal.saving ||
+                    !idModal.canonicalName.trim() ||
+                    !idModal.identifiedBy.trim()
+                  }
+                  style={{
+                    flex: 1,
+                    padding: "8px 0",
+                    background: "var(--accent)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    fontSize: 13,
+                    opacity:
+                      idModal.saving ||
+                      !idModal.canonicalName.trim() ||
+                      !idModal.identifiedBy.trim()
+                        ? 0.6
+                        : 1,
+                  }}
+                >
+                  {idModal.saving ? "Saving..." : "Save Identification"}
+                </button>
+              </div>
+            </div>
           </div>
         )}
-      </div>
-    ));
+      </>
+    );
   }
 
   function renderOcrTab() {
