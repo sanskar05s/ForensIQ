@@ -986,11 +986,19 @@ export default function EvidenceDetail() {
       );
     }
 
-    const supporting = links.filter((l) => l.link_type === "SUPPORTS");
-    const contradicting = links.filter((l) => l.link_type === "CONTRADICTS");
+    const supporting = links.filter((l) =>
+      (l.link_type || '').toLowerCase() === "supports");
+    const contradicting = links.filter((l) =>
+      (l.link_type || '').toLowerCase() === "contradicts");
+    const unresolved = links.filter((l) =>
+      (l.link_type || '').toLowerCase() === "unresolved");
 
     function renderLinkGroup(title, items, color) {
-      if (items.length === 0) return null;
+      if (items.length === 0) return (
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>
+          No {title?.toLowerCase() || 'matching'} claims found.
+        </p>
+      );
       return (
         <div style={{ marginBottom: "20px" }}>
           <h4 style={{ color, fontSize: "13px", fontWeight: 600, marginBottom: "10px" }}>
@@ -1012,16 +1020,22 @@ export default function EvidenceDetail() {
                   style={{
                     padding: "2px 8px",
                     borderRadius: "999px",
-                    background: link.link_type === "SUPPORTS" ? "rgba(22,163,74,0.15)" : "rgba(220,38,38,0.15)",
-                    color: link.link_type === "SUPPORTS" ? "var(--success)" : "var(--danger)",
+                    background:
+                      (link.link_type || "").toLowerCase() === "supports"
+                        ? "rgba(22,163,74,0.15)"
+                        : "rgba(220,38,38,0.15)",
+                    color:
+                      (link.link_type || "").toLowerCase() === "supports"
+                        ? "var(--success)"
+                        : "var(--danger)",
                     fontSize: "10px",
                     fontWeight: 600,
                   }}
                 >
-                  {link.link_type}
+                  {(link.link_type || "").toUpperCase()}
                 </span>
                 <span style={{ fontSize: "13px", color: "var(--text-primary)" }}>
-                  Witness: {link.witness_label || "Unknown"}
+                  Witness: {link.witness_label || link.statement?.witness_label || "Unknown"}
                 </span>
               </div>
               <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
