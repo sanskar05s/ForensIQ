@@ -54,24 +54,21 @@ def _level3_yolo(entity_norm: str, object_detections: list) -> float | None:
     return None
 
 
-def _level4_human_id(entity_norm: str, object_detections: list) -> float | None:
+def _level4_human_id(entity_norm: str, ev_identifications: list) -> tuple[float | None, dict | None]:
     """
     Level 4: Human-confirmed identity match.
     Investigator/witness identified detection as "Rahul Sharma".
-    Witness entity "Rahul Sharma" → matched via human identification.
+    Witness entity "Rahul Sharma" → matched via detection_identifications record.
     This is the highest-trust match — human explicitly confirmed it.
-    Returns 0.98 if matched, None if not.
+    Returns (0.98, ident) if matched, (None, None) if not.
     """
-    for det in (object_detections or []):
-        identification = det.get("identification")
-        if not identification:
-            continue
-        canonical = _normalize(identification.get("canonical_name") or "")
-        alias = _normalize(identification.get("alias") or "")
-        if entity_norm and (entity_norm == canonical or
-                            (alias and entity_norm == alias)):
-            return 0.98
-    return None
+    for ident in (ev_identifications or []):
+        canon_norm = _normalize(ident.get("canonical_name") or "")
+        alias_norm = _normalize(ident.get("alias") or "")
+        if entity_norm and (entity_norm == canon_norm or
+                            (alias_norm and entity_norm == alias_norm)):
+            return 0.98, ident
+    return None, None
 
 
 def build_claim_links(case_id: str, supabase) -> list:
@@ -92,6 +89,19 @@ def build_claim_links(case_id: str, supabase) -> list:
         .eq("case_id", case_id)\
         .eq("status", "analyzed")\
         .execute().data or []
+
+    # Fetch human identifications (Level 4 match source)
+    id_result = supabase.table("detection_identifications")\
+        .select("evidence_id, detection_index, canonical_name, alias, identified_by, identification_source")\
+        .eq("case_id", case_id)\
+        .execute()
+    all_identifications = id_result.data or []
+
+    # Build lookup: evidence_id → list of identification dicts
+    id_by_evidence: dict = {}
+    for ident in all_identifications:
+        eid = ident["evidence_id"]
+        id_by_evidence.setdefault(eid, []).append(ident)
 
     # Clear existing links for this case (rebuild from scratch)
     supabase.table("evidence_claim_links")\
@@ -119,18 +129,34 @@ def build_claim_links(case_id: str, supabase) -> list:
                 confidence = 0.0
                 match_source = None
                 match_method = None
+                claim_text_note = None
 
                 # ── Level 4: Human-confirmed identity (check first — highest trust) ──
-                yolo_dets = ev.get("object_detections") or []
-                conf = _level4_human_id(entity_norm, yolo_dets)
-                if conf:
-                    link_type    = "supports"
-                    confidence   = conf
-                    match_source = "human_identification"
-                    match_method = "human-confirmed"
+                ev_identifications = id_by_evidence.get(ev["id"], [])
+                for ident in ev_identifications:
+                    canon_norm = _normalize(ident.get("canonical_name") or "")
+                    alias_norm = _normalize(ident.get("alias") or "")
 
-                # ── Level 3: YOLO class exact match ──────────────────────────────────
+                    if entity_norm and (
+                        entity_norm == canon_norm or
+                        (alias_norm and entity_norm == alias_norm)
+                    ):
+                        link_type    = "supports"
+                        confidence   = 0.98   # Human-confirmed = highest trust
+                        match_source = "human_identification"
+                        match_method = "human-confirmed"
+                        # Store identification provenance in claim_text
+                        claim_text_note = (
+                            f"[Human identification: '{ident['canonical_name']}' "
+                            f"identified by {ident['identified_by']} "
+                            f"({ident['identification_source']})]"
+                        )
+                        break  # One human ID match is sufficient
+
+                # If Level 4 found a match, skip Levels 1-3
                 if not link_type:
+                    # ── Level 3: YOLO class exact match ──────────────────────────────
+                    yolo_dets = ev.get("object_detections") or []
                     conf = _level3_yolo(entity_norm, yolo_dets)
                     if conf:
                         link_type    = "supports"
@@ -186,11 +212,15 @@ def build_claim_links(case_id: str, supabase) -> list:
 
                 # ── Store if matched (confidence threshold: 0.65) ────────────────────
                 if link_type and confidence >= 0.65:
+                    claim_text = (stmt.get("raw_text") or "")[:200]
+                    if claim_text_note:
+                        claim_text = f"{claim_text} {claim_text_note}"[:300]
+
                     new_links.append({
                         "case_id":      case_id,
                         "evidence_id":  ev["id"],
                         "statement_id": stmt["id"],
-                        "claim_text":   (stmt.get("raw_text") or "")[:200],
+                        "claim_text":   claim_text,
                         "entity_text":  entity_text,
                         "link_type":    link_type,
                         "confidence":   confidence,
