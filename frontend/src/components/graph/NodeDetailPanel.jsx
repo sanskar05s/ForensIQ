@@ -1,5 +1,8 @@
+import { useState, useEffect } from "react";
+import { useParams } from "react-router-dom";
 import { X } from "lucide-react";
 import { NODE_COLORS } from "../../constants";
+import { apiGet } from "../../api/client";
 
 const monoStyle = { fontFamily: "'JetBrains Mono', monospace" };
 
@@ -14,7 +17,30 @@ const TYPE_DESCRIPTIONS = {
   TIME: "Temporal reference",
 };
 
-export default function NodeDetailPanel({ node, onClose, cachedStatements, edges = [] }) {
+export default function NodeDetailPanel({
+  node,
+  caseId: propCaseId,
+  onClose,
+  cachedStatements,
+  edges = [],
+}) {
+  const { caseId: paramCaseId } = useParams();
+  const caseId = propCaseId || paramCaseId;
+
+  const [intelligence, setIntelligence] = useState(null);
+  const [loadingIntel, setLoadingIntel] = useState(false);
+
+  useEffect(() => {
+    if (!node?.label || !caseId) return;
+    setLoadingIntel(true);
+    apiGet(
+      `/graph/cases/${caseId}/entity-intelligence/${encodeURIComponent(node.label)}`
+    )
+      .then((res) => setIntelligence(res.data || res || null))
+      .catch(() => setIntelligence(null))
+      .finally(() => setLoadingIntel(false));
+  }, [node?.label, caseId]);
+
   if (!node) return null;
 
   const color = NODE_COLORS[node.type] || "#7B8FAE";
@@ -141,6 +167,112 @@ export default function NodeDetailPanel({ node, onClose, cachedStatements, edges
             </span>
           </div>
         ))}
+      </div>
+
+      {/* Cross-module intelligence */}
+      <div
+        style={{
+          borderTop: "1px solid var(--border)",
+          paddingTop: 12,
+          marginTop: 10,
+          marginBottom: 20,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 10,
+            textTransform: "uppercase",
+            letterSpacing: 0.5,
+            color: "var(--accent)",
+            fontWeight: 600,
+            marginBottom: 8,
+          }}
+        >
+          Case Intelligence
+        </div>
+
+        {loadingIntel && (
+          <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>
+            Loading...
+          </div>
+        )}
+
+        {intelligence && !loadingIntel && (
+          <>
+            {[
+              {
+                label: "Witness Mentions",
+                count: intelligence.witness_mentions?.length || 0,
+                color: "#3B82F6",
+              },
+              {
+                label: "Image Detections",
+                count: intelligence.visual_detections?.length || 0,
+                color: "#10B981",
+              },
+              {
+                label: "Human Identifications",
+                count: intelligence.human_ids?.length || 0,
+                color: "#F59E0B",
+              },
+              {
+                label: "Timeline Events",
+                count: intelligence.timeline_mentions?.length || 0,
+                color: "#8B5CF6",
+              },
+              {
+                label: "Contradictions",
+                count: intelligence.related_contradictions?.length || 0,
+                color: "#DC2626",
+              },
+              {
+                label: "Claim Links",
+                count: intelligence.related_claims?.length || 0,
+                color: "#06B6D4",
+              },
+            ].map((row) => (
+              <div
+                key={row.label}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "4px 0",
+                  borderBottom: "1px solid var(--border)",
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ color: "var(--text-secondary)" }}>{row.label}</span>
+                <span
+                  style={{
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontWeight: 700,
+                    color: row.count > 0 ? row.color : "var(--text-muted)",
+                    fontSize: 13,
+                  }}
+                >
+                  {row.count}
+                </span>
+              </div>
+            ))}
+
+            {intelligence.source_count > 1 && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: "6px 8px",
+                  background: "var(--accent-dim, rgba(59, 130, 246, 0.1))",
+                  borderRadius: 5,
+                  fontSize: 11,
+                  color: "var(--accent, #3B82F6)",
+                  lineHeight: 1.4,
+                }}
+              >
+                {intelligence.cross_module_note}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Referenced in statements */}

@@ -279,3 +279,137 @@ async def graph_staleness(case_id: str):
         "new_statements_count": new_count,
         "last_build": last_build
     }
+
+
+@graph_router.get("/graph/cases/{case_id}/entity-intelligence/{entity_label}")
+async def get_entity_intelligence(case_id: str, entity_label: str):
+    """
+    Cross-module intelligence summary for a named entity.
+    Aggregates data from: witness_statements, detection_identifications,
+    timeline_events, contradictions, evidence_claim_links.
+    No LLM. Pure database aggregation.
+    """
+    supabase = get_supabase_client()
+    label_lower = entity_label.lower().strip()
+
+    # 1. Witness statement mentions (from entities JSONB)
+    stmts = supabase.table("witness_statements")\
+        .select("id, witness_label, entities")\
+        .eq("case_id", case_id)\
+        .execute().data or []
+
+    witness_mentions = []
+    for stmt in stmts:
+        entities = stmt.get("entities") or []
+        if isinstance(entities, str):
+            import json
+            try:
+                entities = json.loads(entities)
+            except Exception:
+                entities = []
+        for ent in entities:
+            if ent.get("text", "").lower().strip() == label_lower:
+                witness_mentions.append({
+                    "witness_label": stmt["witness_label"],
+                    "statement_id":  stmt["id"],
+                })
+                break
+
+    # 2. Visual detections (from object_detections JSONB)
+    evidence_list = supabase.table("evidence")\
+        .select("id, filename, object_detections")\
+        .eq("case_id", case_id)\
+        .eq("type", "image")\
+        .execute().data or []
+
+    visual_detections = []
+    for ev in evidence_list:
+        dets = ev.get("object_detections") or []
+        if isinstance(dets, str):
+            import json
+            try:
+                dets = json.loads(dets)
+            except Exception:
+                dets = []
+        for idx, det in enumerate(dets):
+            if det.get("label", "").lower().strip() == label_lower:
+                visual_detections.append({
+                    "evidence_id":    ev["id"],
+                    "filename":       ev["filename"],
+                    "confidence":     det.get("confidence"),
+                    "detection_index": det.get("detection_index", idx),
+                })
+
+    # 3. Human identifications (canonical name match)
+    id_result = supabase.table("detection_identifications")\
+        .select("*")\
+        .eq("case_id", case_id)\
+        .execute().data or []
+
+    human_ids = [
+        i for i in id_result
+        if (i.get("canonical_name") or "").lower().strip() == label_lower
+        or (i.get("alias") or "").lower().strip() == label_lower
+    ]
+
+    # 4. Timeline events mentioning this entity
+    timeline = supabase.table("timeline_events")\
+        .select("id, description, timestamp_hard, relative_order, source")\
+        .eq("case_id", case_id)\
+        .execute().data or []
+
+    timeline_mentions = [
+        t for t in timeline
+        if label_lower in (t.get("description") or "").lower()
+    ]
+
+    # 5. Contradictions involving this entity
+    contradictions = supabase.table("contradictions")\
+        .select("id, type, severity, claim_a, claim_b, resolution_status")\
+        .eq("case_id", case_id)\
+        .execute().data or []
+
+    related_contradictions = [
+        c for c in contradictions
+        if label_lower in (c.get("claim_a") or "").lower()
+        or label_lower in (c.get("claim_b") or "").lower()
+    ]
+
+    # 6. Claim links
+    claims = supabase.table("evidence_claim_links")\
+        .select("id, evidence_id, link_type, confidence, match_source, entity_text")\
+        .eq("case_id", case_id)\
+        .execute().data or []
+
+    related_claims = [
+        c for c in claims
+        if label_lower in (c.get("entity_text") or "").lower()
+    ]
+
+    # Compute cross-module presence score
+    source_count = sum([
+        1 if witness_mentions   else 0,
+        1 if visual_detections  else 0,
+        1 if human_ids          else 0,
+        1 if timeline_mentions  else 0,
+        1 if related_contradictions else 0,
+        1 if related_claims     else 0,
+    ])
+
+    return {
+        "entity_label":      entity_label,
+        "case_id":           case_id,
+        "witness_mentions":  witness_mentions,
+        "visual_detections": visual_detections,
+        "human_ids":         human_ids,
+        "timeline_mentions": timeline_mentions,
+        "related_contradictions": related_contradictions,
+        "related_claims":    related_claims,
+        "source_count":      source_count,
+        "cross_module_note": (
+            f"Entity appears across {source_count} independent evidence source(s)."
+            if source_count > 1 else
+            "Entity appears in one evidence source."
+        ),
+    }
+

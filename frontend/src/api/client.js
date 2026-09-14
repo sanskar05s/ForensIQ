@@ -38,3 +38,11 @@ export async function apiPatch(endpoint, body, options = {}) {
     ...options,
   });
 }
+
+export async function apiGet(endpoint, options = {}) {
+  return apiClient(endpoint, {
+    method: "GET",
+    ...options,
+  });
+}
+
