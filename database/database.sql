@@ -92,6 +92,17 @@ CREATE TABLE IF NOT EXISTS contradictions (
     nli_confidence  FLOAT,       -- tier 2 only (0.0-1.0)
     xai_explanation TEXT NOT NULL,  -- human-readable reason this pair was flagged
     is_dismissed    BOOLEAN NOT NULL DEFAULT FALSE,
+    resolution_status TEXT NOT NULL DEFAULT 'unresolved'
+                      CHECK (resolution_status IN (
+                          'unresolved',
+                          'supported_by_evidence',
+                          'rejected',
+                          'insufficient_evidence',
+                          'resolved'
+                      )),
+    resolution_reason TEXT,
+    resolved_at     TIMESTAMPTZ,
+    resolved_by     TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -604,3 +615,26 @@ CREATE INDEX IF NOT EXISTS idx_det_id_case     ON detection_identifications (cas
 CREATE INDEX IF NOT EXISTS idx_det_id_stmt     ON detection_identifications (statement_id);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.detection_identifications TO service_role;
+
+-- ─── Contradiction Resolution Status (CR-1) ──────────────────────────────────
+-- Extends soft dismissal (is_dismissed) to 5 investigation states
+
+ALTER TABLE contradictions
+ADD COLUMN IF NOT EXISTS resolution_status TEXT
+    NOT NULL DEFAULT 'unresolved'
+    CHECK (resolution_status IN (
+        'unresolved',
+        'supported_by_evidence',
+        'rejected',
+        'insufficient_evidence',
+        'resolved'
+    ));
+
+ALTER TABLE contradictions
+ADD COLUMN IF NOT EXISTS resolution_reason TEXT;
+
+ALTER TABLE contradictions
+ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ;
+
+ALTER TABLE contradictions
+ADD COLUMN IF NOT EXISTS resolved_by TEXT;   -- "Investigator" or witness label

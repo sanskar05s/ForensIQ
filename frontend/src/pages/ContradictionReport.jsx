@@ -10,7 +10,7 @@ import {
 import AppShell from "../components/layout/AppShell";
 import Spinner from "../components/loading/Spinner";
 import SkeletonCard from "../components/loading/SkeletonCard";
-import { apiClient } from "../api/client";
+import { apiClient, apiPatch } from "../api/client";
 
 /* ─── Type badge colors ─── */
 
@@ -26,6 +26,34 @@ const SEVERITY_COLORS = {
   HIGH: "var(--danger)",
   MEDIUM: "var(--warning)",
   LOW: "var(--success)",
+};
+
+const STATUS_CONFIG = {
+  unresolved: {
+    label: "⚠ Unresolved",
+    color: "#D97706",
+    bg: "rgba(217,119,6,0.12)",
+  },
+  supported_by_evidence: {
+    label: "✓ Supported by Evidence",
+    color: "#059669",
+    bg: "rgba(5,150,105,0.12)",
+  },
+  rejected: {
+    label: "✗ Rejected",
+    color: "#DC2626",
+    bg: "rgba(220,38,38,0.12)",
+  },
+  insufficient_evidence: {
+    label: "? Insufficient Evidence",
+    color: "#6366F1",
+    bg: "rgba(99,102,241,0.12)",
+  },
+  resolved: {
+    label: "✓ Resolved",
+    color: "#059669",
+    bg: "rgba(5,150,105,0.12)",
+  },
 };
 
 const DEFAULT_TYPE_COLOR = { bg: "rgba(156,163,175,0.12)", color: "#9ca3af" };
@@ -76,6 +104,8 @@ export default function ContradictionReport() {
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState(null);
   const [runError, setRunError] = useState("");
+
+  const [resolvingId, setResolvingId] = useState(null);
 
   useEffect(() => {
     fetchContradictions();
@@ -130,6 +160,21 @@ export default function ContradictionReport() {
     }
   }
 
+  async function resolveContradiction(contradictionId, status, reason) {
+    setResolvingId(contradictionId);
+    try {
+      await apiPatch(
+        `/contradiction/cases/${caseId}/${contradictionId}/resolve`,
+        { resolution_status: status, resolution_reason: reason }
+      );
+      await fetchContradictions();
+    } catch (err) {
+      console.error("Failed to resolve contradiction:", err);
+    } finally {
+      setResolvingId(null);
+    }
+  }
+
   /* ─── Helpers ─── */
 
   function getWitnessLabel(c, side) {
@@ -151,6 +196,8 @@ export default function ContradictionReport() {
     const severityColor = SEVERITY_COLORS[c.severity] || "var(--text-muted)";
     const labelA = getWitnessLabel(c, "witness_a");
     const labelB = getWitnessLabel(c, "witness_b");
+    const status = c.resolution_status || "unresolved";
+    const statusCfg = STATUS_CONFIG[status] || STATUS_CONFIG.unresolved;
 
     return (
       <div key={c.id} style={cardStyle}>
@@ -198,6 +245,21 @@ export default function ContradictionReport() {
             }}
           >
             {c.severity}
+          </span>
+
+          {/* Resolution status badge */}
+          <span
+            style={{
+              padding: "2px 8px",
+              borderRadius: 4,
+              fontSize: 11,
+              fontWeight: 600,
+              background: statusCfg.bg,
+              color: statusCfg.color,
+              border: `1px solid ${statusCfg.color}44`,
+            }}
+          >
+            {statusCfg.label}
           </span>
 
           {/* Dismiss button */}
@@ -318,6 +380,113 @@ export default function ContradictionReport() {
             {(c.nli_confidence * 100).toFixed(0)}%
           </div>
         )}
+
+        {/* Resolution reason display */}
+        {c.resolution_reason && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: "8px 12px",
+              background: statusCfg.bg || "rgba(0,0,0,0.06)",
+              borderLeft: `3px solid ${statusCfg.color || "var(--border)"}`,
+              borderRadius: "0 6px 6px 0",
+              fontSize: 12,
+              color: "var(--text-secondary)",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+                color: statusCfg.color,
+                display: "block",
+                marginBottom: 3,
+              }}
+            >
+              Resolution
+            </span>
+            {c.resolution_reason}
+            {c.resolved_by && (
+              <span
+                style={{
+                  color: "var(--text-muted)",
+                  fontSize: 10,
+                  marginLeft: 6,
+                }}
+              >
+                — {c.resolved_by}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Resolution action */}
+        <div
+          style={{
+            marginTop: 14,
+            paddingTop: 12,
+            borderTop: "1px solid var(--border)",
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <span
+            style={{
+              fontSize: 11,
+              color: "var(--text-muted)",
+              fontWeight: 500,
+              marginRight: 2,
+            }}
+          >
+            Resolution:
+          </span>
+          {[
+            { value: "unresolved", label: "⚠ Mark Unresolved" },
+            { value: "supported_by_evidence", label: "✓ Supported by Evidence" },
+            { value: "rejected", label: "✗ Reject" },
+            { value: "insufficient_evidence", label: "? Insufficient Evidence" },
+            { value: "resolved", label: "✓ Mark Resolved" },
+          ].map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => {
+                const currentReason =
+                  c.resolution_status === opt.value
+                    ? c.resolution_reason || ""
+                    : "";
+                const reason = window.prompt(
+                  `Optional reason for "${opt.label}":`,
+                  currentReason
+                );
+                if (reason !== null) {
+                  resolveContradiction(c.id, opt.value, reason.trim() || null);
+                }
+              }}
+              disabled={resolvingId === c.id}
+              style={{
+                padding: "4px 10px",
+                fontSize: 11,
+                borderRadius: 5,
+                cursor: resolvingId === c.id ? "not-allowed" : "pointer",
+                background:
+                  c.resolution_status === opt.value
+                    ? STATUS_CONFIG[opt.value]?.bg
+                    : "transparent",
+                border: `1px solid ${STATUS_CONFIG[opt.value]?.color || "var(--border)"}`,
+                color:
+                  STATUS_CONFIG[opt.value]?.color || "var(--text-muted)",
+                fontWeight: c.resolution_status === opt.value ? 700 : 400,
+                opacity: resolvingId === c.id ? 0.6 : 1,
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
     );
   }

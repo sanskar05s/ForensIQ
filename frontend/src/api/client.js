@@ -30,3 +30,11 @@ export async function apiClient(endpoint, options = {}) {
 
   return response.json();
 }
+
+export async function apiPatch(endpoint, body, options = {}) {
+  return apiClient(endpoint, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+    ...options,
+  });
+}

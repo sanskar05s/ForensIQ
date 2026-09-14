@@ -1,4 +1,6 @@
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from typing import Optional
 from app.core.supabase import get_supabase_client
 from app.services.contradiction.rule_based import run_tier1
 from app.services.contradiction.nli_escalation import run_tier2
@@ -292,3 +294,90 @@ async def dismiss_contradiction(case_id: str, contradiction_id: str):
         .eq("case_id", case_id)\
         .execute()
     return {"success": True, "dismissed": True}
+
+
+class ResolutionRequest(BaseModel):
+    resolution_status: str  # unresolved|supported_by_evidence|rejected|insufficient_evidence|resolved
+    resolution_reason: Optional[str] = None
+    resolved_by:       Optional[str] = "Investigator"
+
+
+VALID_STATUSES = {
+    "unresolved",
+    "supported_by_evidence",
+    "rejected",
+    "insufficient_evidence",
+    "resolved",
+}
+
+
+@router.patch("/contradiction/cases/{case_id}/{contradiction_id}/resolve")
+async def resolve_contradiction(
+    case_id: str,
+    contradiction_id: str,
+    body: ResolutionRequest,
+):
+    """
+    Sets the resolution status of a contradiction.
+
+    Separate from is_dismissed — this records the investigator's
+    finding about WHY the contradiction exists and whether evidence
+    supports one side.
+
+    resolution_status: unresolved | supported_by_evidence |
+                       rejected | insufficient_evidence | resolved
+    resolution_reason: free text explanation
+    resolved_by: who made this determination
+    """
+    if body.resolution_status not in VALID_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"resolution_status must be one of: {VALID_STATUSES}"
+        )
+
+    supabase = get_supabase_client()
+
+    # Verify contradiction exists and belongs to case
+    existing_res = supabase.table("contradictions")\
+        .select("id")\
+        .eq("id", contradiction_id)\
+        .eq("case_id", case_id)\
+        .execute()
+    if not existing_res.data:
+        raise HTTPException(status_code=404, detail="Contradiction not found")
+
+    update_data = {
+        "resolution_status": body.resolution_status,
+        "resolution_reason": body.resolution_reason or None,
+        "resolved_by":       body.resolved_by or "Investigator",
+    }
+
+    # Only set resolved_at when status moves away from unresolved
+    if body.resolution_status != "unresolved":
+        update_data["resolved_at"] = datetime.now(timezone.utc).isoformat()
+    else:
+        update_data["resolved_at"] = None  # reset if reverting to unresolved
+
+    supabase.table("contradictions")\
+        .update(update_data)\
+        .eq("id", contradiction_id)\
+        .execute()
+
+    try:
+        log_activity(
+            case_id=case_id,
+            event_type="contradictions_run",
+            description=(
+                f"Contradiction {body.resolution_status.replace('_', ' ')}: "
+                f"{(body.resolution_reason or '')[:80]}"
+            ),
+            metadata={
+                "contradiction_id":  contradiction_id,
+                "resolution_status": body.resolution_status,
+            }
+        )
+    except Exception:
+        pass
+
+    return {"success": True, "resolution_status": body.resolution_status}
+
