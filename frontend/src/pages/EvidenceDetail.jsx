@@ -160,6 +160,14 @@ export default function EvidenceDetail() {
   const fullImgRef = useRef(null);
   const [imgDimensions, setImgDimensions] = useState({});
 
+  /* Witness options for identification modal */
+  const [witnessOptions, setWitnessOptions] = useState([]);
+
+  /* Preview tab overlay states */
+  const [previewSelectedDet, setPreviewSelectedDet] = useState(null);
+  const previewImgRef = useRef(null);
+  const [previewImgDims, setPreviewImgDims] = useState({});
+
   /* Identification modal state */
   const [idModal, setIdModal] = useState({
     open: false,
@@ -167,8 +175,8 @@ export default function EvidenceDetail() {
     detectionLabel: "",
     canonicalName: "",
     alias: "",
-    identifiedBy: "",
-    source: "witness",
+    identifiedBy: "Investigator",
+    source: "investigator",
     statementId: "",
     notes: "",
     saving: false,
@@ -209,6 +217,17 @@ export default function EvidenceDetail() {
       .finally(() => setLoadingIdentifications(false));
   }, [activeTab, evidence?.id, caseId]);
 
+  /* Fetch overlay data when Preview tab opens */
+  useEffect(() => {
+    if ((activeTab !== "preview" && activeTab !== "Preview") || !evidence?.id) return;
+    if (!signedUrl && !urlLoading) {
+      fetchSignedUrl();
+    }
+    apiGet(`/identification/cases/${caseId}/evidence/${evidence.id}/overlay-data`)
+      .then((res) => setOverlayData(res.data?.overlay || res.overlay || []))
+      .catch(() => {});
+  }, [activeTab, evidence?.id, caseId]);
+
   const openFullImageOverlay = async (detIndex) => {
     let url = signedUrl;
     if (!url) {
@@ -224,7 +243,7 @@ export default function EvidenceDetail() {
     setOverlayModal({ open: true, selectedIndex: detIndex, imageUrl: url });
   };
 
-  const openIdentificationModal = (detIndex, label) => {
+  const openIdentificationModal = async (detIndex, label) => {
     const existing = identifications.find((id) => id.detection_index === detIndex);
     setIdModal({
       open: true,
@@ -232,28 +251,39 @@ export default function EvidenceDetail() {
       detectionLabel: label,
       canonicalName: existing?.canonical_name || "",
       alias: existing?.alias || "",
-      identifiedBy: existing?.identified_by || "",
-      source: existing?.identification_source || "witness",
+      identifiedBy: existing?.identified_by || "Investigator",
+      source: (existing?.identified_by || "Investigator") === "Investigator" ? "investigator" : "witness",
       statementId: existing?.statement_id || "",
       notes: existing?.notes || "",
       saving: false,
     });
+    // Fetch witness labels for dropdown
+    try {
+      const res = await apiGet(`/witness/cases/${caseId}/statements`);
+      const stmts = res.data?.statements || res.statements || [];
+      const labels = [...new Set(stmts.map((s) => s.witness_label).filter(Boolean))];
+      setWitnessOptions(labels);
+    } catch {
+      setWitnessOptions([]);
+    }
   };
 
   const saveIdentification = async () => {
-    if (!idModal.canonicalName.trim() || !idModal.identifiedBy.trim()) return;
+    if (!idModal.canonicalName.trim()) return;
     setIdModal((m) => ({ ...m, saving: true }));
+    const inferredSource =
+      idModal.identifiedBy === "Investigator" ? "investigator" : "witness";
     try {
       await apiPost(
         `/identification/cases/${caseId}/evidence/${evidence.id}`,
         {
           detection_index: idModal.detectionIndex,
           canonical_name: idModal.canonicalName.trim(),
-          alias: idModal.alias.trim() || null,
-          identified_by: idModal.identifiedBy.trim(),
-          identification_source: idModal.source,
-          statement_id: idModal.statementId || null,
-          notes: idModal.notes.trim() || null,
+          alias: idModal.alias?.trim() || null,
+          identified_by: idModal.identifiedBy,
+          identification_source: inferredSource,
+          statement_id: null,
+          notes: idModal.notes?.trim() || null,
         }
       );
       // Refresh identifications and overlay data
@@ -445,7 +475,7 @@ export default function EvidenceDetail() {
                 marginBottom: 12,
               }}
             >
-              {/* Crop thumbnail */}
+              {/* Crop thumbnail with fullscreen button */}
               <div
                 style={{
                   width: "100%",
@@ -456,7 +486,9 @@ export default function EvidenceDetail() {
                   justifyContent: "center",
                   overflow: "hidden",
                   position: "relative",
+                  cursor: "pointer",
                 }}
+                onClick={() => openFullImageOverlay(detIndex)}
               >
                 <img
                   src={`${API_BASE}/api/identification/cases/${caseId}/evidence/${evidence.id}/crop/${detIndex}`}
@@ -473,7 +505,7 @@ export default function EvidenceDetail() {
                     }
                   }}
                 />
-                {/* Fallback when crop unavailable */}
+                {/* Fallback */}
                 <div
                   style={{
                     display: "none",
@@ -486,6 +518,46 @@ export default function EvidenceDetail() {
                   }}
                 >
                   No preview
+                </div>
+
+                {/* Fullscreen icon — top right of thumbnail */}
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openFullImageOverlay(detIndex);
+                  }}
+                  style={{
+                    position: "absolute",
+                    top: 6,
+                    right: 6,
+                    width: 24,
+                    height: 24,
+                    background: "rgba(0,0,0,0.55)",
+                    borderRadius: 4,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    color: "#fff",
+                  }}
+                  title="View in full image"
+                >
+                  {/* Maximize icon — 4 corner arrows */}
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="15 3 21 3 21 9" />
+                    <polyline points="9 21 3 21 3 15" />
+                    <line x1="21" y1="3" x2="14" y2="10" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                  </svg>
                 </div>
               </div>
 
@@ -640,27 +712,12 @@ export default function EvidenceDetail() {
                 )}
 
                 {/* Action buttons */}
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <button
-                    onClick={() => openFullImageOverlay(detIndex)}
-                    style={{
-                      flex: 1,
-                      padding: "6px 0",
-                      fontSize: 11,
-                      background: "var(--bg-muted)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 6,
-                      color: "var(--text-secondary)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    View in image
-                  </button>
+                <div style={{ marginTop: 10 }}>
                   <button
                     onClick={() => openIdentificationModal(detIndex, det.label)}
                     style={{
-                      flex: 1,
-                      padding: "6px 0",
+                      width: "100%",
+                      padding: "7px 0",
                       fontSize: 11,
                       background: isIdentified
                         ? "transparent"
@@ -675,7 +732,7 @@ export default function EvidenceDetail() {
                       cursor: "pointer",
                     }}
                   >
-                    {isIdentified ? "Edit ID" : "Add ID"}
+                    {isIdentified ? "Edit Identification" : "Add Identification"}
                   </button>
                 </div>
               </div>
@@ -963,56 +1020,40 @@ export default function EvidenceDetail() {
                   >
                     Identified by *
                   </div>
-                  <input
+                  <select
                     value={idModal.identifiedBy}
-                    onChange={(e) =>
+                    onChange={(e) => {
+                      const val = e.target.value;
                       setIdModal((m) => ({
                         ...m,
-                        identifiedBy: e.target.value,
-                      }))
-                    }
-                    placeholder="e.g. Guard Meena, Investigator"
+                        identifiedBy: val,
+                        // Auto-set source based on selection
+                        source: val === "Investigator" ? "investigator" : "witness",
+                      }));
+                    }}
                     style={{
                       width: "100%",
                       padding: "8px 10px",
                       borderRadius: 6,
                       fontSize: 13,
-                      background: "var(--bg-elevated)",
-                      color: "var(--text-primary)",
+                      background: "var(--bg-muted)",
                       border: "1px solid var(--border)",
-                    }}
-                  />
-                </label>
-
-                <label>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "var(--text-muted)",
-                      marginBottom: 4,
+                      color: "var(--text-primary)",
                     }}
                   >
-                    Identification source
-                  </div>
-                  <select
-                    value={idModal.source}
-                    onChange={(e) =>
-                      setIdModal((m) => ({ ...m, source: e.target.value }))
-                    }
-                    style={{
-                      width: "100%",
-                      padding: "8px 10px",
-                      borderRadius: 6,
-                      fontSize: 13,
-                      background: "var(--bg-elevated)",
-                      color: "var(--text-primary)",
-                      border: "1px solid var(--border)",
-                    }}
-                  >
-                    <option value="witness">Witness</option>
-                    <option value="investigator">Investigator</option>
-                    <option value="document">Document / Evidence</option>
-                    <option value="other">Other</option>
+                    <option value="Investigator">Investigator</option>
+                    {witnessOptions.map((label) => (
+                      <option key={label} value={label}>
+                        {label}
+                      </option>
+                    ))}
+                    {idModal.identifiedBy &&
+                      idModal.identifiedBy !== "Investigator" &&
+                      !witnessOptions.includes(idModal.identifiedBy) && (
+                        <option value={idModal.identifiedBy}>
+                          {idModal.identifiedBy}
+                        </option>
+                      )}
                   </select>
                 </label>
 
@@ -1083,8 +1124,7 @@ export default function EvidenceDetail() {
                   onClick={saveIdentification}
                   disabled={
                     idModal.saving ||
-                    !idModal.canonicalName.trim() ||
-                    !idModal.identifiedBy.trim()
+                    !idModal.canonicalName.trim()
                   }
                   style={{
                     flex: 1,
@@ -1409,15 +1449,272 @@ export default function EvidenceDetail() {
 
     if (evidence.type === "image") {
       return (
-        <img
-          src={signedUrl}
-          alt={evidence.filename}
-          style={{
-            maxWidth: "100%",
-            borderRadius: "8px",
-            border: "1px solid var(--border)",
-          }}
-        />
+        <div style={{ position: "relative", display: "inline-block", width: "100%" }}>
+          {/* Full image */}
+          <img
+            ref={previewImgRef}
+            src={signedUrl}
+            alt={evidence.filename}
+            onLoad={() => {
+              const el = previewImgRef.current;
+              if (!el) return;
+              setPreviewImgDims({
+                naturalW: el.naturalWidth,
+                naturalH: el.naturalHeight,
+                displayW: el.width,
+                displayH: el.height,
+              });
+            }}
+            style={{ display: "block", maxWidth: "100%", width: "100%", borderRadius: "8px" }}
+          />
+
+          {/* SVG bounding box overlay */}
+          {previewImgDims.displayW > 0 && overlayData.length > 0 && (
+            <svg
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: previewImgDims.displayW,
+                height: previewImgDims.displayH,
+                pointerEvents: "all",
+              }}
+              viewBox={`0 0 ${previewImgDims.displayW} ${previewImgDims.displayH}`}
+            >
+              {overlayData.map((det) => {
+                if (!det.bbox || det.bbox.length < 4) return null;
+                const isSelected = previewSelectedDet?.detection_index === det.detection_index;
+                const isNorm = det.bbox.every((v) => v >= 0 && v <= 1);
+                const [bx1, by1, bx2, by2] = det.bbox;
+                const scaleX = previewImgDims.displayW / previewImgDims.naturalW;
+                const scaleY = previewImgDims.displayH / previewImgDims.naturalH;
+
+                const rx = isNorm ? bx1 * previewImgDims.displayW : bx1 * scaleX;
+                const ry = isNorm ? by1 * previewImgDims.displayH : by1 * scaleY;
+                const rw = isNorm
+                  ? (bx2 - bx1) * previewImgDims.displayW
+                  : (bx2 - bx1) * scaleX;
+                const rh = isNorm
+                  ? (by2 - by1) * previewImgDims.displayH
+                  : (by2 - by1) * scaleY;
+
+                return (
+                  <g
+                    key={det.detection_index}
+                    onClick={() =>
+                      setPreviewSelectedDet(isSelected ? null : det)
+                    }
+                    style={{ cursor: "pointer" }}
+                  >
+                    <rect
+                      x={rx}
+                      y={ry}
+                      width={rw}
+                      height={rh}
+                      fill={isSelected ? "rgba(59,130,246,0.08)" : "transparent"}
+                      stroke={
+                        isSelected
+                          ? "#3B82F6"
+                          : det.is_identified
+                          ? "#10B981"
+                          : "rgba(255,255,255,0.5)"
+                      }
+                      strokeWidth={isSelected ? 2.5 : 1.5}
+                      rx={3}
+                    />
+                    {/* Label above bbox */}
+                    <text
+                      x={rx + 4}
+                      y={ry > 16 ? ry - 5 : ry + rh + 14}
+                      fill={
+                        isSelected
+                          ? "#3B82F6"
+                          : det.is_identified
+                          ? "#10B981"
+                          : "rgba(255,255,255,0.85)"
+                      }
+                      fontSize={10}
+                      fontFamily="JetBrains Mono, monospace"
+                      style={{ pointerEvents: "none" }}
+                    >
+                      {det.label}
+                      {det.is_identified
+                        ? ` • ${det.identifications?.[0]?.canonical_name || ""}`
+                        : ` ${Math.round(det.confidence * 100)}%`}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          )}
+
+          {/* Selected detection detail panel */}
+          {previewSelectedDet && (
+            <div
+              style={{
+                position: "absolute",
+                top: 8,
+                right: 8,
+                width: 220,
+                background: "rgba(15,20,30,0.92)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                padding: 12,
+                backdropFilter: "blur(8px)",
+                zIndex: 10,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "#64748B",
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    AI detected
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: "#fff",
+                      marginTop: 2,
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {previewSelectedDet.label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color:
+                        previewSelectedDet.confidence >= 0.7
+                          ? "#10B981"
+                          : "#F59E0B",
+                      fontFamily: "JetBrains Mono, monospace",
+                    }}
+                  >
+                    {Math.round(previewSelectedDet.confidence * 100)}% confidence
+                  </div>
+                </div>
+                <button
+                  onClick={() => setPreviewSelectedDet(null)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#64748B",
+                    cursor: "pointer",
+                    fontSize: 16,
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Human identifications */}
+              {previewSelectedDet.identifications?.length > 0 ? (
+                <div
+                  style={{
+                    marginTop: 10,
+                    paddingTop: 8,
+                    borderTop: "1px solid rgba(255,255,255,0.1)",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "#10B981",
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                      marginBottom: 4,
+                    }}
+                  >
+                    Human identification
+                  </div>
+                  {previewSelectedDet.identifications.map((id, j) => (
+                    <div key={j} style={{ marginBottom: 4 }}>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: "#fff",
+                        }}
+                      >
+                        {id.canonical_name}
+                      </div>
+                      <div style={{ fontSize: 10, color: "#94A3B8" }}>
+                        {id.identified_by} · {id.identification_source}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 11,
+                    color: "#475569",
+                    fontStyle: "italic",
+                  }}
+                >
+                  Not identified
+                </div>
+              )}
+
+              {/* Quick "Add ID" button */}
+              <button
+                onClick={() => {
+                  setPreviewSelectedDet(null);
+                  openIdentificationModal(
+                    previewSelectedDet.detection_index,
+                    previewSelectedDet.label
+                  );
+                }}
+                style={{
+                  marginTop: 10,
+                  width: "100%",
+                  padding: "5px 0",
+                  fontSize: 11,
+                  background: "transparent",
+                  border: "1px solid #3B82F6",
+                  borderRadius: 5,
+                  color: "#3B82F6",
+                  cursor: "pointer",
+                }}
+              >
+                {previewSelectedDet.is_identified ? "Edit ID" : "Add ID"}
+              </button>
+            </div>
+          )}
+
+          {/* Legend */}
+          {overlayData.length > 0 && (
+            <div
+              style={{
+                marginTop: 8,
+                display: "flex",
+                gap: 12,
+                fontSize: 10,
+                color: "var(--text-muted)",
+                fontFamily: "JetBrains Mono, monospace",
+              }}
+            >
+              <span>── Detected</span>
+              <span style={{ color: "#10B981" }}>── Identified</span>
+              <span style={{ color: "#3B82F6" }}>── Selected</span>
+            </div>
+          )}
+        </div>
       );
     }
 

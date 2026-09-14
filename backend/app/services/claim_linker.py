@@ -237,7 +237,7 @@ def build_claim_links(case_id: str, supabase) -> list:
         key = (
             link["evidence_id"],
             link["statement_id"],
-            link["entity_text"].lower().strip()
+            _normalize(link.get("entity_text", ""))  # ← use _normalize for consistency
         )
         if key not in seen_links:
             seen_links.add(key)
