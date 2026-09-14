@@ -165,13 +165,22 @@ def build_graph(case_id: str, supabase,
         .eq("status", "analyzed")\
         .execute().data or []
 
+    # Fetch human identifications for this case (VEI Phase 2)
+    id_result = supabase.table("detection_identifications")\
+        .select("evidence_id, detection_index, canonical_name, alias, identified_by, identification_source")\
+        .eq("case_id", case_id)\
+        .execute()
+    human_identifications = id_result.data or []
+
+    det_index_map = {}  # (evidence_id, det_index) -> node_id
+
     for ev in image_evidence:
         detections = ev.get("object_detections")
         if not detections or not isinstance(detections, list):
             continue
         detected_ids = []
 
-        for det in detections:
+        for det_idx, det in enumerate(detections):
             label = (det.get("label") or "").strip()
             confidence = det.get("confidence", 0)
             if not label or confidence < 0.55:
@@ -193,9 +202,18 @@ def build_graph(case_id: str, supabase,
                     "centrality_score": 0.0,
                     "degree": 0,
                     "community_id": 0,
+                    "source_ids": [],
                 }
 
             entity_data[node_id]["mention_count"] += 1
+            if "source_ids" not in entity_data[node_id]:
+                entity_data[node_id]["source_ids"] = []
+            ev_source = {"type": "evidence", "id": ev["id"]}
+            if ev_source not in entity_data[node_id]["source_ids"]:
+                entity_data[node_id]["source_ids"].append(ev_source)
+
+            det_index_map[(ev["id"], det_idx)] = node_id
+
             if node_id not in detected_ids:
                 detected_ids.append(node_id)
 
@@ -258,6 +276,92 @@ def build_graph(case_id: str, supabase,
             logger.warning(
                 f"Semantic relationship extraction skipped (non-fatal): {e}. "
                 f"Graph uses co-occurrence edges only."
+            )
+
+    # ── Entity Identity Resolution (VEI Phase 2) ─────────────────────────────
+    # For each human identification, find the corresponding KG entity node
+    # and the YOLO detection node. Create an IDENTIFIED_AS edge connecting them.
+    # This does NOT merge nodes — it creates an explicit investigator-confirmed link.
+
+    def _ensure_edge(u: str, v: str, relation: str, weight: int = 1, **kwargs):
+        if G.has_edge(u, v):
+            G[u][v]["relation"] = relation
+            G[u][v]["weight"] = max(G[u][v].get("weight", 1), weight)
+            for k, val in kwargs.items():
+                if val is not None:
+                    G[u][v][k] = val
+        else:
+            G.add_edge(u, v, relation=relation, weight=weight, **kwargs)
+
+    def _normalize_name(text: str) -> str:
+        """Consistent normalization for identity matching."""
+        return re.sub(r'[^a-z0-9]', '', text.lower().strip())
+
+    for ident in human_identifications:
+        canonical = ident.get("canonical_name", "")
+        canonical_norm = _normalize_name(canonical)
+        if not canonical_norm:
+            continue
+
+        # Find existing entity node that matches the canonical name
+        # (PERSON, VEHICLE, OBJECT nodes from witness NLP)
+        matching_entity_node = None
+        for node_id, node_data in entity_data.items():
+            label_norm = _normalize_name(node_data.get("label", ""))
+            if label_norm == canonical_norm:
+                matching_entity_node = node_id
+                break
+
+        # Also check alias if canonical name didn't match
+        if not matching_entity_node and ident.get("alias"):
+            alias_norm = _normalize_name(ident["alias"])
+            if alias_norm:
+                for node_id, node_data in entity_data.items():
+                    label_norm = _normalize_name(node_data.get("label", ""))
+                    if label_norm == alias_norm:
+                        matching_entity_node = node_id
+                        break
+
+        if not matching_entity_node:
+            continue  # No matching entity in KG — skip
+
+        # Find the YOLO detection node for this evidence item
+        # YOLO nodes are OBJECT type with label = YOLO class name
+        evidence_id = ident.get("evidence_id", "")
+        det_index   = ident.get("detection_index", -1)
+
+        yolo_node_id = det_index_map.get((evidence_id, det_index))
+
+        if not yolo_node_id:
+            # Find OBJECT nodes that came from this evidence item
+            # They have source_ids containing {"type": "evidence", "id": evidence_id}
+            for node_id, node_data in entity_data.items():
+                if node_data.get("type") != "OBJECT":
+                    continue
+                source_ids = node_data.get("source_ids") or []
+                if not any(
+                    s.get("type") == "evidence" and s.get("id") == evidence_id
+                    for s in source_ids
+                ):
+                    continue
+                yolo_node_id = node_id
+                break
+
+        # This OBJECT node is from the same evidence item
+        # Create IDENTIFIED_AS edge from YOLO node to entity node
+        if yolo_node_id and G.has_node(yolo_node_id) and G.has_node(matching_entity_node):
+            identified_by = ident.get("identified_by") or "Investigator"
+            _ensure_edge(
+                yolo_node_id,
+                matching_entity_node,
+                "IDENTIFIED_AS",
+                weight=1,
+                source_witness=identified_by,
+                evidence_text=f"Human identification: '{canonical}'",
+            )
+            logger.info(
+                f"Identity resolved: {yolo_node_id} → {matching_entity_node} "
+                f"(confirmed by {identified_by})"
             )
 
     # Build serialisable nodes list
