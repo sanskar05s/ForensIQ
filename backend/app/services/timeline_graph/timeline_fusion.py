@@ -80,92 +80,11 @@ def _score_to_timestamp(score: float) -> Optional[str]:
 
 
 # ── Event Taxonomy ─────────────────────────────────────────────────────────────
-# Maps surface words/phrases → canonical event type.
-# Longer phrases listed first so greedy matching works correctly.
-# Add new entries here to support new case types — no algorithm changes needed.
+from app.core.taxonomy import EVENT_TAXONOMY, get_event_types
 
-_TAXONOMY: Dict[str, str] = {
-    # Collision / Accident
-    "vehicle struck":      "collision", "vehicle hit":        "collision",
-    "knocked down":        "collision", "ran over":           "collision",
-    "collision":           "collision", "collided":           "collision",
-    "crashed into":        "collision", "crash":              "collision",
-    "struck":              "collision", "smashed":            "collision",
-    "impact":              "collision", "accident":           "collision",
-    "ramming":             "collision", "hit":                "collision",
-    # Robbery / Theft
-    "armed robbery":       "robbery",   "broke in":           "robbery",
-    "demanded money":      "robbery",   "robbery":            "robbery",
-    "robbed":              "robbery",   "theft":              "robbery",
-    "stolen":              "robbery",   "looting":            "robbery",
-    "heist":               "robbery",   "snatched":           "robbery",
-    "burglary":            "robbery",   "raided":             "robbery",
-    # Shooting
-    "opened fire":         "shooting",  "gunshot":            "shooting",
-    "shooting":            "shooting",  "fired":              "shooting",
-    "gunfire":             "shooting",  "shot":               "shooting",
-    # Stabbing
-    "knife attack":        "stabbing",  "stabbing":           "stabbing",
-    "stabbed":             "stabbing",  "slashed":            "stabbing",
-    # Escape / Flight — extensive to handle varied phrasing
-    "left the scene":      "escape",    "drove away":         "escape",
-    "sped away":           "escape",    "speeds away":        "escape",
-    "speed away":          "escape",    "rode away":          "escape",
-    "ran away":            "escape",    "ran off":            "escape",
-    "drove off":           "escape",    "raced away":         "escape",
-    "rushed away":         "escape",    "took off":           "escape",
-    "fled the scene":      "escape",    "escape":             "escape",
-    "escaped":             "escape",    "escaping":           "escape",
-    "fled":                "escape",    "fleeing":            "escape",
-    "absconded":           "escape",    "motorcycles left":   "escape",
-    "vehicle fled":        "escape",    "driven off":         "escape",
-    # Assault / Fight
-    "altercation":         "assault",   "brawl":              "assault",
-    "fight":               "assault",   "assault":            "assault",
-    "attacked":            "assault",   "beating":            "assault",
-    # Explosion / Fire
-    "explosion":           "explosion", "blast":              "explosion",
-    "detonated":           "explosion", "bomb":               "explosion",
-    "caught fire":         "fire",      "fire":               "fire",
-    "flames":              "fire",      "blaze":              "fire",
-    "burning":             "fire",      "arson":              "fire",
-    # Shouting / Disturbance
-    "screaming":           "disturbance", "screamed":         "disturbance",
-    "shouting":            "disturbance", "shouted":          "disturbance",
-    "yelling":             "disturbance", "commotion":        "disturbance",
-    "alarm":               "disturbance", "noise":            "disturbance",
-    "loud noise":          "disturbance",
-    # Emergency Response
-    "ambulance arrived":   "emergency", "police arrived":     "emergency",
-    "ambulance":           "emergency", "paramedics":         "emergency",
-    "first responders":    "emergency", "emergency":          "emergency",
-    "rescue":              "emergency",
-    # Arrival / Entry
-    "arrived at":          "arrival",   "pulled up":          "arrival",
-    "arrived":             "arrival",   "approached":         "arrival",
-    "entered":             "arrival",   "appeared":           "arrival",
-    "came to":             "arrival",
-    # Cyber (for cyber investigations)
-    "data breach":         "breach",    "hacked":             "breach",
-    "ransomware":          "breach",    "phishing":           "breach",
-    "breach":              "breach",    "malware":            "breach",
-    # Generic
-    "incident":            "incident",  "occurred":           "incident",
-    "happened":            "incident",  "took place":         "incident",
-}
-
-# Pre-sorted longest → shortest for greedy matching
+_TAXONOMY: Dict[str, str] = EVENT_TAXONOMY
 _TAXONOMY_KEYS = sorted(_TAXONOMY.keys(), key=len, reverse=True)
-
-
-def _event_types(text: str) -> Set[str]:
-    """Returns the set of canonical event types present in text."""
-    result: Set[str] = set()
-    lower = text.lower()
-    for surface in _TAXONOMY_KEYS:
-        if surface in lower:
-            result.add(_TAXONOMY[surface])
-    return result
+_event_types = get_event_types
 
 
 # ── Timestamp Parsing ──────────────────────────────────────────────────────────
@@ -237,17 +156,16 @@ def _infer_case_date(evidence_rows: list) -> date:
     Priority 2: Evidence upload timestamps (practical — fixes timezone issue)
     Priority 3: Today                      (last resort — time-of-day still correct)
     """
-    # Priority 1: EXIF
+    # Priority 1: EXIF capture timestamp (actual camera time)
     exif_dates = []
     for ev in evidence_rows:
         exif = ev.get("exif_metadata") or {}
-        for f in ("capture_timestamp", "created_timestamp", "creation_date"):
-            ts = exif.get(f)
-            if ts:
-                dt = _parse_full(ts)
-                if dt and dt.year > 2020:
-                    exif_dates.append(dt.date())
-                    break
+        ts = exif.get("capture_timestamp")
+        if ts:
+            dt = _parse_full(ts)
+            if dt and dt.year > 2020:
+                exif_dates.append(dt.date())
+                break
     if exif_dates:
         chosen = Counter(exif_dates).most_common(1)[0][0]
         logger.info(f"case_date from EXIF: {chosen}")
@@ -279,7 +197,15 @@ def _infer_case_date(evidence_rows: list) -> date:
 # Checked in order — first match wins.
 # Negative offset = before anchor. Zero = simultaneous. Positive = after.
 
+_WORD_MINUTES = {
+    'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+    'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+    'fifteen': 15, 'twenty': 20, 'twenty-five': 25, 'thirty': 30, 'forty-five': 45,
+}
+
 _RELATIONS: List[Tuple[str, str, Optional[int]]] = [
+    (r'\b(?:in\s+)?less\s+than\s+a\s+minute\b',     "SHORTLY_AFTER",      60),
+    (r'\bwithin\s+a\s+minute\b',                   "SHORTLY_AFTER",      60),
     (r'\bimmediately\s+(?:after|following)\b',     "IMMEDIATELY_AFTER",  30),
     (r'\bright\s+after\b',                         "IMMEDIATELY_AFTER",  30),
     (r'\binstantly?\b',                            "IMMEDIATELY_AFTER",  30),
@@ -287,10 +213,10 @@ _RELATIONS: List[Tuple[str, str, Optional[int]]] = [
     (r'\bshortly\s+after(?:wards?)?\b',            "SHORTLY_AFTER",      90),
     (r'\bjust\s+after\b',                          "SHORTLY_AFTER",      60),
     (r'\bsoon\s+after(?:wards?)?\b',               "SHORTLY_AFTER",      90),
-    (r'\bwithin\s+a\s+minute\b',                   "SHORTLY_AFTER",      60),
     (r'\ba\s+few\s+minutes?\s+(?:after|later)\b',  "FEW_MINUTES_AFTER",  180),
     (r'\bseveral\s+minutes?\s+(?:after|later)\b',  "FEW_MINUTES_AFTER",  300),
     (r'\b(\d+)\s+minutes?\s+(?:after|later)\b',    "N_MINUTES_AFTER",    None),
+    (r'\bhalf\s+an?\s+hour\s+later\b',             "FEW_MINUTES_AFTER",  1800),
     (r'\bhalf\s+an?\s+hour\b',                     "FEW_MINUTES_AFTER",  1800),
     (r'\bminutes?\s+(?:after|later)\b',            "FEW_MINUTES_AFTER",  180),
     (r'\blater\b',                                 "LATER",              180),
@@ -298,6 +224,8 @@ _RELATIONS: List[Tuple[str, str, Optional[int]]] = [
     (r'\bfollowing\b',                             "AFTER",              120),
     (r'\bsubsequently\b',                          "AFTER",              120),
     (r'\bthen\b',                                  "AFTER",               60),
+    (r'\b(?:about\s+|approximately\s+|around\s+)?(\d+|one|two|three|four|five|ten|fifteen|twenty|thirty|forty-five)\s+minutes?\s+before\b', "N_MINUTES_BEFORE", None),
+    (r'\bhalf\s+an?\s+hour\s+before\b',            "HALF_HOUR_BEFORE",  -1800),
     (r'\bimmediately\s+before\b',                  "SHORTLY_BEFORE",     -15),
     (r'\bjust\s+before\b',                         "SHORTLY_BEFORE",     -30),
     (r'\bshortly\s+before\b',                      "SHORTLY_BEFORE",     -60),
@@ -318,8 +246,10 @@ def _temporal_relation(text: str) -> Tuple[Optional[str], int]:
         m = re.search(pattern, lower, re.IGNORECASE)
         if m:
             if offset is None:
-                n = int(m.group(1)) if m.lastindex else 3
-                return (label, n * 60)
+                g = m.group(1).lower() if m.lastindex else "3"
+                mins = int(g) if g.isdigit() else _WORD_MINUTES.get(g, 3)
+                mult = -60 if "before" in label.lower() else 60
+                return (label, mins * mult)
             return (label, offset)
     return (None, 0)
 
@@ -329,13 +259,15 @@ def _temporal_relation(text: str) -> Tuple[Optional[str], int]:
 _REF_RE = re.compile(
     r'\b(?:shortly\s+|immediately\s+|just\s+|right\s+|soon\s+)?'
     r'(?:before|after|during|while|following|amid|since)\s+'
-    r'(?:the\s+|a\s+|an\s+|hearing\s+|seeing\s+|noticing\s+|'
+    r'(?:(?:i|we|they|he|she)\s+(?:completed|finished|ended|started|was|were)?\s*|'
+    r'(?:completing|finishing|ending|starting)\s+)?'
+    r'(?:the\s+|a\s+|an\s+|my\s+|our\s+|hearing\s+|seeing\s+|noticing\s+|'
     r'they\s+|he\s+|she\s+|it\s+|them\s+)?'
-    r'([a-z]+(?:\s+[a-z]+){0,2})',
+    r'([a-z]+(?:\s+[a-z]+){0,3})',
     re.IGNORECASE
 )
 _REF_STRIP = re.compile(
-    r'^(the|a|an|hearing|seeing|noticing|they|he|she|it|them)\s+',
+    r'^(the|a|an|my|our|hearing|seeing|noticing|they|he|she|it|them|i|we)\s+',
     re.IGNORECASE
 )
 
@@ -346,6 +278,7 @@ def _reference_label(text: str) -> Optional[str]:
     "before the robbery" → "robbery"
     "shortly after hearing shouting" → "shouting"
     "before escaping" → "escaping"
+    "just before I completed the school group supervision" → "supervision"
     """
     m = _REF_RE.search(text)
     if not m:
@@ -379,6 +312,7 @@ def _anchor(
     ev: _Event,
     pool: List[Tuple[str, float, Set[str]]],
     idx: Dict[str, List[float]],
+    witness_default_anchor: Optional[float] = None,
 ) -> Optional[float]:
     """
     Tries to find an anchor sort_score for a relative event using four passes.
@@ -396,8 +330,18 @@ def _anchor(
     # Pass A — taxonomy: ev.reference_label is a canonical type in idx
     if ev.reference_label and ev.reference_label in idx:
         scores = idx[ev.reference_label]
-        base = min(scores)
+        base = max(scores) if off < 0 else min(scores)
         return base + off
+
+    # If reference label is "incident", fallback to core incident/crime events in pool
+    if ev.reference_label == "incident":
+        incident_scores = [
+            s for _, s, etypes in pool
+            if etypes & {"incident", "robbery", "theft", "collision", "shooting", "stabbing", "assault"}
+        ]
+        if incident_scores:
+            base = max(incident_scores) if off < 0 else min(incident_scores)
+            return base + off
 
     # Pass B — keyword: reference label words appear in anchor descriptions
     if ev.reference_label:
@@ -406,16 +350,24 @@ def _anchor(
             if len(w) >= 4
         }
         if ref_words:
-            best_base: Optional[float] = None
             best_hits = 0
+            best_base_before: Optional[float] = None
+            best_base_after: Optional[float] = None
             for desc, score, _ in pool:
                 desc_words = set(re.findall(r'\b[a-z]{4,}\b', desc.lower()))
                 hits = len(ref_words & desc_words)
                 if hits > best_hits:
                     best_hits = hits
-                    best_base = score
-            if best_base is not None:
-                return best_base + off
+                    best_base_before = score
+                    best_base_after  = score
+                elif hits == best_hits and hits > 0:
+                    if score > (best_base_before or 0):
+                        best_base_before = score
+                    if score < (best_base_after or float('inf')):
+                        best_base_after = score
+            if best_hits > 0:
+                base = best_base_before if off < 0 else best_base_after
+                return base + off
 
     # Pass C — event-type overlap: this event's own types match an anchor's types
     if ev.event_types:
@@ -428,6 +380,10 @@ def _anchor(
                 best_base = score
         if best_base is not None:
             return best_base + off
+
+    # Fallback to witness's own explicit anchor time if available
+    if witness_default_anchor is not None:
+        return witness_default_anchor + off
 
     # Pass D — directional fallback
     if ev.relation is None:
@@ -490,15 +446,13 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
         capture_dt: Optional[datetime] = None
         is_evidence_anchored = False
 
-        # Priority 1: EXIF capture timestamp (actual event time)
-        for field in ("capture_timestamp", "created_timestamp", "creation_date"):
-            ts = exif.get(field)
-            if ts:
-                dt = _parse_full(ts)
-                if dt and dt.year > 2020:
-                    capture_dt = dt
-                    is_evidence_anchored = True
-                    break
+        # Priority 1: EXIF capture timestamp (actual event time from camera)
+        ts = exif.get("capture_timestamp")
+        if ts:
+            dt = _parse_full(ts)
+            if dt and dt.year > 2020:
+                capture_dt = dt
+                is_evidence_anchored = True
 
         # Priority 2: Upload timestamp → end of timeline (current behavior)
         upload_dt = _parse_full(ev.get("uploaded_at") or "") if not capture_dt else None
@@ -531,6 +485,10 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
         ))
 
     # ── Phase 1B: Witness statement events ────────────────────────────────────
+    stmt_anchor_times: Dict[str, float] = {}
+    range_end_re = re.compile(r'\b(?:until|to|till)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))\b', re.IGNORECASE)
+    stmt_extra_scores: Dict[str, List[Tuple[str, float]]] = {}
+
     for stmt in statements:
         stmt_claims = conflict_claims.get(stmt["id"], [])
         for entry in (stmt.get("temporal_sequence") or []):
@@ -577,6 +535,20 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
                         else:
                             explicit_dt = datetime.combine(case_date, t)
                         break
+
+            # Track first explicit time per witness statement as default anchor
+            if explicit_dt:
+                score = _to_score(explicit_dt)
+                if stmt["id"] not in stmt_anchor_times:
+                    stmt_anchor_times[stmt["id"]] = score
+
+            # Check for range end (e.g. "supervising ... until 1 PM")
+            m_range = range_end_re.search(raw)
+            if m_range and case_date:
+                t_end = _parse_time(m_range.group(1))
+                if t_end:
+                    end_dt = datetime.combine(case_date, t_end)
+                    stmt_extra_scores.setdefault(stmt["id"], []).append((raw, _to_score(end_dt)))
 
             # RESTORED: Set timestamp_hard for all events with a resolved datetime.
             # Previously suppressed to avoid IST timezone shift — now handled in
@@ -632,6 +604,12 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
         for label in ev.event_types:
             anchor_idx.setdefault(label, []).append(ev.sort_score)
 
+    # Add range end scores to anchor index for event types (e.g. supervision until 1 PM)
+    for stmt_id, extra_list in stmt_extra_scores.items():
+        for extra_raw, extra_score in extra_list:
+            for label in _event_types(extra_raw):
+                anchor_idx.setdefault(label, []).append(extra_score)
+
     # Pool of (description, sort_score, event_types) for anchor lookup
     def _build_pool(events_list: List[_Event]) -> List[Tuple[str, float, Set[str]]]:
         return [
@@ -647,7 +625,9 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
     for ev in events:
         if ev.is_evidence or ev.sort_score is not None:
             continue
-        result = _anchor(ev, abs_pool, anchor_idx)
+        sid = ev.source_ids[0]["id"] if ev.source_ids else None
+        default_anchor = stmt_anchor_times.get(sid)
+        result = _anchor(ev, abs_pool, anchor_idx, default_anchor)
         if result is not None:
             ev.sort_score = result
             ev.timestamp_hard = _score_to_timestamp(result)   # Fix 2
@@ -666,7 +646,9 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
     for ev in events:
         if ev.is_evidence or ev.sort_score is not None:
             continue
-        result = _anchor(ev, ext_pool, anchor_idx)
+        sid = ev.source_ids[0]["id"] if ev.source_ids else None
+        default_anchor = stmt_anchor_times.get(sid)
+        result = _anchor(ev, ext_pool, anchor_idx, default_anchor)
         if result is not None:
             ev.sort_score = result
             ev.timestamp_hard = _score_to_timestamp(result)   # Fix 2

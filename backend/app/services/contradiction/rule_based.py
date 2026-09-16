@@ -1,6 +1,7 @@
 import re
 from typing import List, Dict, Optional
 from app.services.contradiction.claim_extractor import extract_all_claims, _normalize_count, _parse_time_to_hours
+from app.core.taxonomy import get_event_types
 
 # Opposite direction pairs
 OPPOSITE_DIRECTIONS = {
@@ -110,6 +111,74 @@ def normalize_time_value(time_str: str) -> Optional[int]:
     return None
 
 
+def _named_entity_overlap(s_a: str, s_b: str) -> bool:
+    """
+    True if both sentences mention the same named entity AND share at least
+    one common action or content word outside the entity itself.
+    Prevents false positives where two witnesses mention the same location/object
+    (e.g. 'Display Case 7') but describe completely different moments/actions.
+    """
+    exclude = {"The", "There", "This", "That", "When", "After", "Before", "While", "One", "Two", "Then"}
+    names_a = {n.lower() for n in re.findall(r'\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*\b', s_a) if n not in exclude}
+    names_b = {n.lower() for n in re.findall(r'\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*\b', s_b) if n not in exclude}
+    common_entities = names_a & names_b
+    if not common_entities:
+        return False
+
+    entity_tokens = set()
+    for ent in common_entities:
+        entity_tokens.update(re.findall(r'\b[a-z]{3,}\b', ent))
+
+    stopwords = {"from", "with", "that", "this", "around", "about", "near", "when", "were", "what", "which",
+                 "some", "more", "then", "there", "their", "them", "they", "been", "have", "only", "also",
+                 "just", "into", "over", "after", "before", "while", "during", "approximately"}
+    words_a = set(re.findall(r'\b[a-z]{4,}\b', s_a.lower()))
+    words_b = set(re.findall(r'\b[a-z]{4,}\b', s_b.lower()))
+    other_common = (words_a & words_b) - stopwords - entity_tokens
+    return len(other_common) >= 1
+
+
+
+def _shared_subject_action(s_a: str, s_b: str) -> bool:
+    """True if sentences share a subject category from _SUBJECTS and common action/verb roots."""
+    from app.services.contradiction.candidate_filter import _SUBJECTS
+    subj_a = {name for name, pat in _SUBJECTS.items() if pat.search(s_a)}
+    subj_b = {name for name, pat in _SUBJECTS.items() if pat.search(s_b)}
+    if not (subj_a & subj_b):
+        return False
+    words_a = set(re.findall(r'\b[a-z]{4,}\b', s_a.lower()))
+    words_b = set(re.findall(r'\b[a-z]{4,}\b', s_b.lower()))
+    stopwords = {"from", "with", "that", "this", "around", "about", "near", "when", "were", "what", "which",
+                 "some", "more", "then", "there", "their", "them", "they", "been", "have", "only", "also",
+                 "just", "into", "over", "after", "before", "while", "during", "approximately"}
+    common = (words_a & words_b) - stopwords
+    return len(common) >= 2
+
+
+def _is_same_event_time_candidate(sentence_a: str, sentence_b: str) -> bool:
+    """
+    Deterministic gate for TIME contradiction comparison.
+    Ensures that time claims are compared only when both sentences describe
+    the same canonical event, same named individual, or same subject undergoing the same action.
+    Eliminates false positives from witnesses describing different sequential moments.
+    """
+    # Signal 1: Shared canonical event taxonomy (robbery, arrival, collision, etc.)
+    et_a = get_event_types(sentence_a)
+    et_b = get_event_types(sentence_b)
+    if et_a and et_b and (et_a & et_b):
+        return True
+
+    # Signal 2: Named individual / entity overlap (e.g. "Rahul Sharma")
+    if _named_entity_overlap(sentence_a, sentence_b):
+        return True
+
+    # Signal 3: Shared specific subject category + matching action/content words
+    if _shared_subject_action(sentence_a, sentence_b):
+        return True
+
+    return False
+
+
 def check_time_contradiction(claims_a: List[Dict],
                              claims_b: List[Dict],
                              hedge_a: int = 0,
@@ -144,6 +213,12 @@ def check_time_contradiction(claims_a: List[Dict],
 
             # Minimum threshold: 15 minutes
             if diff <= 0.25:
+                continue
+
+            # Skip if sentences describe different sequential events
+            sent_a = ca.get("sentence", "")
+            sent_b = cb.get("sentence", "")
+            if not _is_same_event_time_candidate(sent_a, sent_b):
                 continue
 
             severity = "HIGH" if diff > 3 else "MEDIUM"

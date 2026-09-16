@@ -134,6 +134,16 @@ PLACES_TO_FORENSIQ = {
     "arena/indoor":                 "public space",
     "church/indoor":                "public space",
     "mosque/indoor":                "public space",
+    "museum/indoor":                "public space",
+    "museum/outdoor":               "public space",
+    "museum_indoor":                "public space",
+    "museum_outdoor":               "public space",
+    "art_gallery":                  "public space",
+    "art_studio":                   "public space",
+    "art_school":                   "public space",
+    "natural_history_museum":       "public space",
+    "science_museum":               "public space",
+
 
     # ── Outdoor nature ─────────────────────────────────────────────
     "park":                         "outdoor nature",
