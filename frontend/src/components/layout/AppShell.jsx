@@ -5,29 +5,35 @@ export default function AppShell({ children, hideSidebar = false }) {
   return (
     <div
       style={{
-        display: "grid",
-        gridTemplateColumns: hideSidebar ? "1fr" : "240px 1fr",
-        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        height: "100vh",
+        width: "100vw",
+        overflow: "hidden",
         background: "var(--bg)",
       }}
     >
-      {!hideSidebar && <Sidebar />}
+      <TopBar />
 
       <div
         style={{
           display: "flex",
-          flexDirection: "column",
-          minWidth: 0,
+          flex: 1,
+          minHeight: 0,
+          overflow: "hidden",
         }}
       >
-        <TopBar />
+        {!hideSidebar && <Sidebar />}
 
         <main
           style={{
             flex: 1,
+            minWidth: 0,
+            height: "100%",
+            overflowY: "auto",
             padding: "24px",
             background: "var(--bg)",
-            overflowY: "auto",
+            boxSizing: "border-box",
           }}
         >
           {children}

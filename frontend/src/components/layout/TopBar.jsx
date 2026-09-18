@@ -23,6 +23,8 @@ export default function TopBar() {
         justifyContent: "space-between",
         alignItems: "center",
         padding: "0 24px",
+        flexShrink: 0,
+        zIndex: 50,
       }}
     >
       <h3>

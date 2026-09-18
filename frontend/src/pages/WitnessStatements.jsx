@@ -34,7 +34,7 @@ const QUEUE_STATUS = {
 function queueStatusLabel(status) {
   switch (status) {
     case QUEUE_STATUS.PENDING:
-      return "Selected";
+      return "Queued";
     case QUEUE_STATUS.ANALYZING:
       return "Analysing…";
     case QUEUE_STATUS.SUCCESS:
@@ -49,7 +49,8 @@ function queueStatusLabel(status) {
 function queueStatusColor(status) {
   if (status === QUEUE_STATUS.SUCCESS) return "var(--success)";
   if (status === QUEUE_STATUS.FAILED) return "var(--danger)";
-  return "var(--accent)";
+  if (status === QUEUE_STATUS.ANALYZING) return "var(--accent)";
+  return "var(--text-muted)";
 }
 
 function readPersistedQueue(caseId) {
@@ -57,7 +58,10 @@ function readPersistedQueue(caseId) {
   try {
     const raw = localStorage.getItem(`forensiq_witness_queue_${caseId}`);
     const parsed = JSON.parse(raw || "[]");
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item) => item && item.status !== QUEUE_STATUS.SUCCESS && item.status !== QUEUE_STATUS.FAILED)
+      .map((item) => item.status === QUEUE_STATUS.ANALYZING ? { ...item, status: QUEUE_STATUS.PENDING } : item);
   } catch {
     return [];
   }
@@ -145,7 +149,10 @@ export default function WitnessStatements() {
   const [singleDragging, setSingleDragging] = useState(false);
   const singleInputRef = useRef(null);
 
-  /* Option 2: Multi-witness document state */
+  /* Option 2: Multi-witness state */
+  const [multiSubMode, setMultiSubMode] = useState("paste"); // "paste" | "document"
+  const [multiPastedText, setMultiPastedText] = useState("");
+  const [multiParsingText, setMultiParsingText] = useState(false);
   const [multiFile, setMultiFile] = useState(null);
   const [multiParsing, setMultiParsing] = useState(false);
   const [multiDragging, setMultiDragging] = useState(false);
@@ -154,6 +161,12 @@ export default function WitnessStatements() {
   /* Queue state (persisted per case) */
   const [queue, setQueue] = useState(() => readPersistedQueue(caseId));
   const [isProcessing, setIsProcessing] = useState(false);
+  const isProcessingRef = useRef(false);
+  const queueRef = useRef(queue);
+
+  useEffect(() => {
+    queueRef.current = queue;
+  }, [queue]);
 
   /* Form & Queue status messages */
   const [formError, setFormError] = useState("");
@@ -204,81 +217,102 @@ export default function WitnessStatements() {
     }
   }
 
-  /* ── Queue processing engine (adapting Evidence pattern) ── */
-  const triggerProcessQueue = useCallback(
-    async (itemsToProcess) => {
-      if (!itemsToProcess || itemsToProcess.length === 0) return;
-      setIsProcessing(true);
-      setFormError("");
+  /* ── Sequential Queue processing engine (B2) ── */
+  const processQueueSequential = useCallback(async () => {
+    if (isProcessingRef.current) {
+      return; // Already running; subsequent pending items will be processed in order
+    }
+    isProcessingRef.current = true;
+    setIsProcessing(true);
+    setFormError("");
 
-      for (const item of itemsToProcess) {
-        // Set item to ANALYZING
-        setQueue((prev) =>
-          prev.map((q) =>
-            q.id === item.id ? { ...q, status: QUEUE_STATUS.ANALYZING } : q
-          )
+    try {
+      while (true) {
+        const nextItem = queueRef.current.find(
+          (item) => item.status === QUEUE_STATUS.PENDING
         );
+        if (!nextItem) {
+          break;
+        }
+
+        // Set item to ANALYZING
+        setQueue((prev) => {
+          const updated = prev.map((q) =>
+            q.id === nextItem.id ? { ...q, status: QUEUE_STATUS.ANALYZING } : q
+          );
+          queueRef.current = updated;
+          return updated;
+        });
 
         try {
           await apiClient(`/witness/cases/${caseId}/statements`, {
             method: "POST",
             body: JSON.stringify({
-              witness_label: item.witness_label,
-              raw_text: item.raw_text,
-              source_evidence_id: item.source_evidence_id,
+              witness_label: nextItem.witness_label,
+              raw_text: nextItem.raw_text,
+              source_evidence_id: nextItem.source_evidence_id,
             }),
           });
 
           // Set item to SUCCESS
-          setQueue((prev) =>
-            prev.map((q) =>
-              q.id === item.id
+          setQueue((prev) => {
+            const updated = prev.map((q) =>
+              q.id === nextItem.id
                 ? { ...q, status: QUEUE_STATUS.SUCCESS, error: "" }
                 : q
-            )
-          );
+            );
+            queueRef.current = updated;
+            return updated;
+          });
         } catch (err) {
           // Set item to FAILED
-          setQueue((prev) =>
-            prev.map((q) =>
-              q.id === item.id
+          setQueue((prev) => {
+            const updated = prev.map((q) =>
+              q.id === nextItem.id
                 ? {
                     ...q,
                     status: QUEUE_STATUS.FAILED,
                     error: err.message || "Analysis failed",
                   }
                 : q
-            )
-          );
+            );
+            queueRef.current = updated;
+            return updated;
+          });
         }
-      }
 
+        fetchStatements();
+      }
+    } finally {
+      isProcessingRef.current = false;
       setIsProcessing(false);
       fetchStatements();
-    },
-    [caseId]
-  );
+    }
+  }, [caseId]);
 
   async function handleProcessAllPending() {
-    const pendingItems = queue.filter(
-      (item) => item.status === QUEUE_STATUS.PENDING
-    );
-    if (pendingItems.length === 0) return;
-    await triggerProcessQueue(pendingItems);
+    processQueueSequential();
   }
 
   function removeFromQueue(id) {
-    setQueue((prev) => prev.filter((item) => item.id !== id));
+    setQueue((prev) => {
+      const updated = prev.filter((item) => item.id !== id);
+      queueRef.current = updated;
+      return updated;
+    });
   }
 
   function clearCompleted() {
-    setQueue((prev) =>
-      prev.filter(
+    setQueue((prev) => {
+      const updated = prev.filter(
         (item) =>
           item.status !== QUEUE_STATUS.SUCCESS &&
           item.status !== QUEUE_STATUS.FAILED
-      )
-    );
+      );
+      queueRef.current = updated;
+      persistQueue(caseId, updated);
+      return updated;
+    });
   }
 
   /* ── Option 1A: Paste statement submit ── */
@@ -313,11 +347,15 @@ export default function WitnessStatements() {
     setWitnessLabel("");
     setRawText("");
     setSourceEvidenceId("");
-    setQueue((prev) => [...prev, newItem]);
+    setQueue((prev) => {
+      const updated = [...prev, newItem];
+      queueRef.current = updated;
+      return updated;
+    });
     setSuccessMsg("Statement added to processing queue.");
     setTimeout(() => setSuccessMsg(""), 3000);
 
-    triggerProcessQueue([newItem]);
+    processQueueSequential();
   }
 
   /* ── Option 1B: Single document extract & queue ── */
@@ -378,14 +416,80 @@ export default function WitnessStatements() {
     setSingleDocLabel("");
     setSingleExtractedText("");
     setSingleFile(null);
-    setQueue((prev) => [...prev, newItem]);
+    setQueue((prev) => {
+      const updated = [...prev, newItem];
+      queueRef.current = updated;
+      return updated;
+    });
     setSuccessMsg("Document statement added to processing queue.");
     setTimeout(() => setSuccessMsg(""), 3000);
 
-    triggerProcessQueue([newItem]);
+    processQueueSequential();
   }
 
-  /* ── Option 2: Multi-witness document parsing & queue ── */
+  /* ── Option 2A: Multi-witness text parsing & queue ── */
+  async function handleSubmitMultiPasted(e) {
+    e.preventDefault();
+    setFormError("");
+    setSuccessMsg("");
+
+    if (!multiPastedText.trim()) {
+      setFormError("Please enter multi-witness text.");
+      return;
+    }
+    if (multiPastedText.trim().length < 10) {
+      setFormError("Text is too short to extract witness statements.");
+      return;
+    }
+
+    setMultiParsingText(true);
+    try {
+      const res = await apiClient(`/witness/cases/${caseId}/parse-text`, {
+        method: "POST",
+        body: JSON.stringify({ text: multiPastedText.trim() }),
+      });
+
+      if (!res.witnesses || res.witnesses.length === 0) {
+        setFormError(
+          "No recognizable 'Witness Name:' and 'Witness Statement:' pairs found in text."
+        );
+        return;
+      }
+
+      const newItems = res.witnesses.map((w, idx) => ({
+        id: `witness-${Date.now()}-${idx}-${Math.random()
+          .toString(36)
+          .substring(2, 7)}`,
+        witness_label: w.witness_label,
+        raw_text: w.raw_text,
+        source_name: "Direct Entry (Multi)",
+        status: w.valid ? QUEUE_STATUS.PENDING : QUEUE_STATUS.FAILED,
+        error: w.error || (w.valid ? "" : "Invalid witness statement"),
+      }));
+
+      setQueue((prev) => {
+        const updated = [...prev, ...newItems];
+        queueRef.current = updated;
+        return updated;
+      });
+      setMultiPastedText("");
+      setSuccessMsg(
+        `Extracted ${res.total_found} witness statement(s) and added to queue.`
+      );
+      setTimeout(() => setSuccessMsg(""), 4000);
+
+      const hasValid = newItems.some((i) => i.status === QUEUE_STATUS.PENDING);
+      if (hasValid) {
+        processQueueSequential();
+      }
+    } catch (err) {
+      setFormError(err.message || "Failed to parse multi-witness text.");
+    } finally {
+      setMultiParsingText(false);
+    }
+  }
+
+  /* ── Option 2B: Multi-witness document parsing & queue ── */
   async function handleMultiFileSelected(selectedFile) {
     if (!selectedFile) return;
     setMultiFile(selectedFile);
@@ -430,7 +534,11 @@ export default function WitnessStatements() {
         error: w.error || (w.valid ? "" : "Invalid witness statement"),
       }));
 
-      setQueue((prev) => [...prev, ...newItems]);
+      setQueue((prev) => {
+        const updated = [...prev, ...newItems];
+        queueRef.current = updated;
+        return updated;
+      });
       const fileRef = multiFile.name;
       setMultiFile(null);
       setSuccessMsg(
@@ -442,7 +550,7 @@ export default function WitnessStatements() {
         (i) => i.status === QUEUE_STATUS.PENDING
       );
       if (validItems.length > 0) {
-        triggerProcessQueue(validItems);
+        processQueueSequential();
       }
     } catch (err) {
       setFormError(err.message || "Failed to parse multi-witness document.");
@@ -1104,7 +1212,7 @@ export default function WitnessStatements() {
                 transition: "0.2s",
               }}
             >
-              Multi-Witness Document
+              Multi Witness Statements
             </button>
           </div>
 
@@ -1361,113 +1469,244 @@ export default function WitnessStatements() {
             </div>
           )}
 
-          {/* ── OPTION 2: MULTI-WITNESS DOCUMENT ── */}
+          {/* ── OPTION 2: MULTI WITNESS STATEMENTS ── */}
           {inputOption === "multi" && (
-            <form onSubmit={handleParseMultiDocument}>
-              <p
-                style={{
-                  fontSize: "13px",
-                  color: "var(--text-secondary)",
-                  marginBottom: "16px",
-                  lineHeight: 1.5,
-                }}
-              >
-                Upload one PDF, DOC/DOCX, or TXT document containing multiple
-                witness statements labeled with <code>Witness Name:</code> and{" "}
-                <code>Witness Statement:</code>. The parser will split the
-                document and queue each statement independently for NLP analysis.
-              </p>
-
-              <input
-                ref={multiInputRef}
-                type="file"
-                accept=".pdf,.doc,.docx,.txt"
-                hidden
-                onChange={onMultiBrowse}
-              />
-
+            <div>
+              {/* Sub-selector: Paste/Type vs Upload Document */}
               <div
-                onClick={() =>
-                  !multiParsing && multiInputRef.current.click()
-                }
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setMultiDragging(true);
-                }}
-                onDragLeave={() => setMultiDragging(false)}
-                onDrop={onMultiDrop}
                 style={{
-                  border: multiDragging
-                    ? "2px solid var(--accent)"
-                    : "2px dashed var(--border)",
-                  background: "var(--bg-muted)",
-                  padding: "40px 20px",
-                  textAlign: "center",
-                  borderRadius: "10px",
-                  cursor: multiParsing ? "wait" : "pointer",
-                  transition: "0.2s",
+                  display: "flex",
+                  gap: "24px",
                   marginBottom: "20px",
+                  paddingBottom: "14px",
+                  borderBottom: "1px dashed var(--border)",
                 }}
               >
-                <UploadCloud size={40} color="var(--text-secondary)" />
-                <div
+                <label
                   style={{
-                    marginTop: "12px",
-                    fontSize: "15px",
-                    fontWeight: 600,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: multiSubMode === "paste" ? 600 : 400,
+                    color:
+                      multiSubMode === "paste"
+                        ? "var(--text-primary)"
+                        : "var(--text-secondary)",
                   }}
                 >
-                  {multiFile
-                    ? multiFile.name
-                    : "Drag & Drop multi-witness document here, or click to browse"}
-                </div>
-                <p
-                  style={{
-                    fontSize: "12px",
-                    color: "var(--text-muted)",
-                    marginTop: "6px",
-                  }}
-                >
-                  Supports PDF, DOC, DOCX, TXT • Optional case metadata at start
-                  is automatically ignored
-                </p>
-                {multiFile && (
-                  <div
-                    style={{
-                      marginTop: "10px",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "6px",
-                      padding: "4px 12px",
-                      borderRadius: "999px",
-                      background: "rgba(37,99,235,.10)",
-                      color: "var(--accent)",
-                      fontSize: "12px",
-                      fontWeight: 500,
+                  <input
+                    type="radio"
+                    name="multiSubMode"
+                    checked={multiSubMode === "paste"}
+                    onChange={() => {
+                      setMultiSubMode("paste");
+                      setFormError("");
                     }}
-                  >
-                    <FileText size={14} /> Ready to parse: {multiFile.name}
-                  </div>
-                )}
+                  />
+                  Paste / Type Statements Directly
+                </label>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: multiSubMode === "document" ? 600 : 400,
+                    color:
+                      multiSubMode === "document"
+                        ? "var(--text-primary)"
+                        : "var(--text-secondary)",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="multiSubMode"
+                    checked={multiSubMode === "document"}
+                    onChange={() => {
+                      setMultiSubMode("document");
+                      setFormError("");
+                    }}
+                  />
+                  Upload Document (Multiple Witnesses)
+                </label>
               </div>
 
-              <Button type="submit" disabled={!multiFile || multiParsing}>
-                {multiParsing ? (
-                  <span
+              {/* Sub-mode A: Paste / Type */}
+              {multiSubMode === "paste" && (
+                <form onSubmit={handleSubmitMultiPasted}>
+                  <p
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
+                      fontSize: "13px",
+                      color: "var(--text-secondary)",
+                      marginBottom: "14px",
+                      lineHeight: 1.5,
                     }}
                   >
-                    <Spinner size={14} />
-                    Extracting & Splitting Witnesses…
-                  </span>
-                ) : (
-                  "Extract & Queue Witnesses"
-                )}
-              </Button>
-            </form>
+                    Paste or type multiple statements below. Format each statement with <code>Witness Name:</code> and <code>Witness Statement:</code>. The parser will split the statements and queue each witness sequentially for NLP analysis.
+                  </p>
+
+                  <div style={{ marginBottom: "16px" }}>
+                    <textarea
+                      value={multiPastedText}
+                      onChange={(e) => setMultiPastedText(e.target.value)}
+                      placeholder={`Witness Name: Alice Chen\nWitness Statement: I saw a red sedan speeding north on Main Street at around 10:15 PM...\n\nWitness Name: Bob Singh\nWitness Statement: I was walking my dog near 5th Avenue and heard a loud crash around 10:20 PM...`}
+                      required
+                      rows={8}
+                      style={{
+                        ...inputStyle,
+                        resize: "vertical",
+                        lineHeight: 1.6,
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: "13px",
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        color: "var(--text-muted)",
+                        marginTop: "4px",
+                        display: "block",
+                        ...monoStyle,
+                      }}
+                    >
+                      {multiPastedText.length} characters
+                    </span>
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={!multiPastedText.trim() || multiParsingText}
+                  >
+                    {multiParsingText ? (
+                      <span
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <Spinner size={14} />
+                        Extracting & Queueing Witnesses…
+                      </span>
+                    ) : (
+                      "Extract & Queue Witnesses"
+                    )}
+                  </Button>
+                </form>
+              )}
+
+              {/* Sub-mode B: Upload Document */}
+              {multiSubMode === "document" && (
+                <form onSubmit={handleParseMultiDocument}>
+                  <p
+                    style={{
+                      fontSize: "13px",
+                      color: "var(--text-secondary)",
+                      marginBottom: "16px",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    Upload one PDF, DOC/DOCX, or TXT document containing multiple
+                    witness statements labeled with <code>Witness Name:</code> and{" "}
+                    <code>Witness Statement:</code>. The parser will split the
+                    document and queue each statement sequentially for NLP analysis.
+                  </p>
+
+                  <input
+                    ref={multiInputRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx,.txt"
+                    hidden
+                    onChange={onMultiBrowse}
+                  />
+
+                  <div
+                    onClick={() =>
+                      !multiParsing && multiInputRef.current.click()
+                    }
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setMultiDragging(true);
+                    }}
+                    onDragLeave={() => setMultiDragging(false)}
+                    onDrop={onMultiDrop}
+                    style={{
+                      border: multiDragging
+                        ? "2px solid var(--accent)"
+                        : "2px dashed var(--border)",
+                      background: "var(--bg-muted)",
+                      padding: "40px 20px",
+                      textAlign: "center",
+                      borderRadius: "10px",
+                      cursor: multiParsing ? "wait" : "pointer",
+                      transition: "0.2s",
+                      marginBottom: "20px",
+                    }}
+                  >
+                    <UploadCloud size={40} color="var(--text-secondary)" />
+                    <div
+                      style={{
+                        marginTop: "12px",
+                        fontSize: "15px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {multiFile
+                        ? multiFile.name
+                        : "Drag & Drop multi-witness document here, or click to browse"}
+                    </div>
+                    <p
+                      style={{
+                        fontSize: "12px",
+                        color: "var(--text-muted)",
+                        marginTop: "6px",
+                      }}
+                    >
+                      Supports PDF, DOC, DOCX, TXT • Optional case metadata at start
+                      is automatically ignored
+                    </p>
+                    {multiFile && (
+                      <div
+                        style={{
+                          marginTop: "10px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          padding: "4px 12px",
+                          borderRadius: "999px",
+                          background: "rgba(37,99,235,.10)",
+                          color: "var(--accent)",
+                          fontSize: "12px",
+                          fontWeight: 500,
+                        }}
+                      >
+                        <FileText size={14} /> Ready to parse: {multiFile.name}
+                      </div>
+                    )}
+                  </div>
+
+                  <Button type="submit" disabled={!multiFile || multiParsing}>
+                    {multiParsing ? (
+                      <span
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <Spinner size={14} />
+                        Extracting & Splitting Witnesses…
+                      </span>
+                    ) : (
+                      "Extract & Queue Witnesses"
+                    )}
+                  </Button>
+                </form>
+              )}
+            </div>
           )}
 
           {/* Form error / success alerts */}

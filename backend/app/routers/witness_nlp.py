@@ -190,7 +190,18 @@ async def create_statement(case_id: str, body: WitnessStatementRequest):
                 c.get("type", "")
             )
             if fp not in existing_fingerprints:
-                supabase_client.table("contradictions").insert(c).execute()
+                db_payload = {
+                    k: v for k, v in c.items()
+                    if k in {
+                        "case_id", "tier", "type", "witness_a_id", "witness_b_id",
+                        "claim_a", "claim_b", "severity", "nli_confidence",
+                        "xai_explanation", "id", "created_at", "is_dismissed",
+                        "resolution_status", "resolution_reason", "resolved_at", "resolved_by"
+                    }
+                }
+                if "nli_confidence" not in db_payload and "confidence" in c:
+                    db_payload["nli_confidence"] = c.get("confidence")
+                supabase_client.table("contradictions").insert(db_payload).execute()
                 existing_fingerprints.add(fp)
 
         build_state["last_contradiction_run"] = datetime.now(timezone.utc).isoformat()
@@ -388,4 +399,37 @@ async def extract_single_text(case_id: str, file: UploadFile = File(...)):
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+class ParseTextRequest(BaseModel):
+    text: str
+
+
+@router.post("/cases/{case_id}/parse-text")
+async def parse_text_endpoint(case_id: str, body: ParseTextRequest):
+    """
+    Accepts pasted text containing multiple witness statements,
+    and deterministically splits it using parse_multi_witness_document.
+    """
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(
+            status_code=400,
+            detail="Statement text cannot be empty."
+        )
+
+    entries = parse_multi_witness_document(text)
+    if not entries:
+        raise HTTPException(
+            status_code=400,
+            detail="No recognizable 'Witness Name:' and 'Witness Statement:' pairs found in text."
+        )
+
+    return {
+        "filename": "Direct Text Entry",
+        "total_found": len(entries),
+        "valid_count": sum(1 for e in entries if e["valid"]),
+        "witnesses": entries,
+    }
+
 

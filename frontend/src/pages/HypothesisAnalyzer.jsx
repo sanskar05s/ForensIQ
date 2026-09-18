@@ -10,8 +10,7 @@ const HypothesisAnalyzer = () => {
   const { caseId } = useParams();
   const navigate = useNavigate();
   
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [hypothesisText, setHypothesisText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   
@@ -39,8 +38,8 @@ const HypothesisAnalyzer = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!title || !description) {
-      setFormError('Please fill in all fields.');
+    if (!hypothesisText.trim()) {
+      setFormError('Please enter a hypothesis.');
       return;
     }
     setFormError('');
@@ -48,10 +47,12 @@ const HypothesisAnalyzer = () => {
     try {
       await apiClient(`/hypotheses/cases/${caseId}`, {
         method: 'POST',
-        body: JSON.stringify({ title, description })
+        body: JSON.stringify({
+          title: hypothesisText.trim(),
+          description: hypothesisText.trim()
+        })
       });
-      setTitle('');
-      setDescription('');
+      setHypothesisText('');
       fetchHypotheses();
     } catch (err) {
       setFormError(err.message || 'Failed to submit hypothesis.');
@@ -125,31 +126,12 @@ const HypothesisAnalyzer = () => {
           </h2>
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: '16px' }}>
-              <input
-                type="text"
-                placeholder="e.g. The robbery was planned in advance"
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                required
-                style={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-sm)',
-                  background: 'var(--bg-muted)',
-                  color: 'var(--text-primary)',
-                  fontSize: '14px',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
-            <div style={{ marginBottom: '16px' }}>
               <textarea
-                placeholder="Describe your hypothesis in detail..."
-                value={description}
-                onChange={e => setDescription(e.target.value)}
+                placeholder="e.g. The robbery was planned in advance by someone with inside access to the security codes..."
+                value={hypothesisText}
+                onChange={e => setHypothesisText(e.target.value)}
                 required
-                rows={3}
+                rows={4}
                 style={{
                   width: '100%',
                   padding: '10px 14px',

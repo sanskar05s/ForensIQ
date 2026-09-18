@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import {
   ArrowLeft,
@@ -12,8 +12,6 @@ import {
   Activity,
   FileText,
   Shield,
-  CheckCircle,
-  Circle,
   AlertCircle,
   FlaskConical,
 } from "lucide-react";
@@ -100,22 +98,17 @@ export default function CaseDetail() {
     return () => clearTimeout(t);
   }, [aiUpdate]);
 
-  // Completeness calculation
-  const completionSteps = case_
-    ? [
-        { label: "Evidence", done: (case_.evidence_count || 0) > 0 },
-        { label: "Statements", done: (case_.witness_count || 0) > 0 },
-        { label: "Contradictions", done: contradictionCount > 0 },
-        { label: "Timeline", done: timelineCount > 0 },
-        { label: "Graph", done: graphNodeCount > 0 },
-        { label: "Report", done: reportStatus === "ready" },
-      ]
-    : [];
-  const completionPercent = completionSteps.length
-    ? Math.round(
-        (completionSteps.filter((s) => s.done).length / completionSteps.length) * 100
-      )
-    : 0;
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get("assistant") === "open") {
+      setAssistantOpen(true);
+    }
+    const handleOpenAssistant = () => setAssistantOpen(true);
+    window.addEventListener("open-ai-assistant", handleOpenAssistant);
+    return () =>
+      window.removeEventListener("open-ai-assistant", handleOpenAssistant);
+  }, [searchParams]);
 
   function reportBadge() {
     if (reportStatus === "ready") return { label: "READY", color: "var(--success)" };
@@ -176,15 +169,53 @@ export default function CaseDetail() {
           All Cases
         </button>
 
-        <h1
+        <div
           style={{
-            fontSize: "32px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
             marginBottom: "14px",
-            color: "var(--text-primary)",
+            flexWrap: "wrap",
+            gap: "12px",
           }}
         >
-          {case_.title}
-        </h1>
+          <h1
+            style={{
+              fontSize: "32px",
+              margin: 0,
+              color: "var(--text-primary)",
+            }}
+          >
+            {case_.title}
+          </h1>
+
+          <button
+            onClick={() => navigate(`/cases/${caseId}/activity`)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "8px 16px",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--border)",
+              background: "var(--bg-surface)",
+              color: "var(--text-primary)",
+              cursor: "pointer",
+              fontSize: "13px",
+              fontWeight: 500,
+              transition: "var(--transition)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "var(--accent)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "var(--border)";
+            }}
+          >
+            <Activity size={16} color="var(--accent)" />
+            Activity Log ({activityCount})
+          </button>
+        </div>
 
         <div style={{ display: "flex", gap: "12px", marginBottom: "18px" }}>
           <span
@@ -207,61 +238,11 @@ export default function CaseDetail() {
           </span>
         </div>
 
-        <p style={{ color: "var(--text-secondary)", marginBottom: "24px" }}>
+        <p style={{ color: "var(--text-secondary)", marginBottom: "28px" }}>
           Investigator: {case_.investigator_name}
           {" • "}
           Created {relativeTime(case_.created_at)}
         </p>
-
-        {/* Case Completeness */}
-        <div
-          style={{
-            background: "var(--bg-surface)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-lg)",
-            padding: "16px 20px",
-            marginBottom: "28px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-            {completionSteps.map((step, i) => (
-              <div key={step.label} style={{ display: "flex", alignItems: "center" }}>
-                {i > 0 && (
-                  <div
-                    style={{
-                      width: "24px",
-                      height: "2px",
-                      background: step.done ? "var(--success)" : "var(--border)",
-                    }}
-                  />
-                )}
-                <div style={{ textAlign: "center" }}>
-                  {step.done ? (
-                    <CheckCircle size={18} color="var(--success)" />
-                  ) : (
-                    <Circle size={18} color="var(--text-muted)" />
-                  )}
-                  <div
-                    style={{
-                      fontSize: "10px",
-                      color: step.done ? "var(--success)" : "var(--text-muted)",
-                      marginTop: "4px",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {step.label}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div style={{ ...mono, fontSize: "13px", color: "var(--text-secondary)" }}>
-            {completionPercent}% Complete
-          </div>
-        </div>
 
         {/* Modules */}
         <h2 style={{ marginBottom: "20px" }}>Investigation Modules</h2>
@@ -274,6 +255,7 @@ export default function CaseDetail() {
             marginBottom: "42px",
           }}
         >
+          {/* 1. Evidence */}
           <ModuleCard
             icon={<Image />}
             title="Evidence"
@@ -282,6 +264,7 @@ export default function CaseDetail() {
             onClick={() => navigate(`/cases/${caseId}/evidence`)}
           />
 
+          {/* 2. Witnesses */}
           <ModuleCard
             icon={<Users />}
             title="Witnesses"
@@ -290,6 +273,7 @@ export default function CaseDetail() {
             onClick={() => navigate(`/cases/${caseId}/witnesses`)}
           />
 
+          {/* 3. Contradictions */}
           <ModuleCard
             icon={<GitMerge />}
             title="Contradictions"
@@ -298,6 +282,7 @@ export default function CaseDetail() {
             onClick={() => navigate(`/cases/${caseId}/contradictions`)}
           />
 
+          {/* 4. Timeline */}
           <ModuleCard
             icon={<Clock />}
             title="Timeline"
@@ -306,6 +291,7 @@ export default function CaseDetail() {
             onClick={() => navigate(`/cases/${caseId}/timeline`)}
           />
 
+          {/* 5. Knowledge Graph */}
           <ModuleCard
             icon={<Share2 />}
             title="Knowledge Graph"
@@ -314,6 +300,7 @@ export default function CaseDetail() {
             onClick={() => navigate(`/cases/${caseId}/knowledge-graph`)}
           />
 
+          {/* 6. Evidence Integrity */}
           <ModuleCard
             icon={<Shield />}
             title="Evidence Integrity"
@@ -326,22 +313,25 @@ export default function CaseDetail() {
             onClick={() => navigate(`/cases/${caseId}/blockchain`)}
           />
 
+          {/* 7. Investigation Leads */}
           <ModuleCard
-            icon={<MessageSquare />}
-            title="AI Assistant"
-            description="Ask AI"
+            icon={<AlertCircle />}
+            title="Investigation Leads"
+            description="AI-identified evidence gaps"
             active
-            onClick={() => setAssistantOpen(true)}
+            onClick={() => navigate(`/cases/${caseId}/leads`)}
           />
 
+          {/* 8. Hypothesis Analyzer */}
           <ModuleCard
-            icon={<Activity />}
-            title="Activity Log"
-            description={`${activityCount} events`}
+            icon={<FlaskConical />}
+            title="Hypothesis Analyzer"
+            description="Test theories against evidence"
             active
-            onClick={() => navigate(`/cases/${caseId}/activity`)}
+            onClick={() => navigate(`/cases/${caseId}/hypotheses`)}
           />
 
+          {/* 9. Report */}
           <ModuleCard
             icon={<FileText />}
             title="Report"
@@ -354,20 +344,13 @@ export default function CaseDetail() {
             onClick={() => navigate(`/cases/${caseId}/report`)}
           />
 
+          {/* 10. AI Assistant */}
           <ModuleCard
-            icon={<AlertCircle />}
-            title="Investigation Leads"
-            description="AI-identified evidence gaps"
+            icon={<MessageSquare />}
+            title="AI Assistant"
+            description="Ask AI"
             active
-            onClick={() => navigate(`/cases/${caseId}/leads`)}
-          />
-
-          <ModuleCard
-            icon={<FlaskConical />}
-            title="Hypothesis Analyzer"
-            description="Test theories against evidence"
-            active
-            onClick={() => navigate(`/cases/${caseId}/hypotheses`)}
+            onClick={() => setAssistantOpen(true)}
           />
         </div>
       </div>

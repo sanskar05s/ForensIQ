@@ -116,7 +116,14 @@ function readPersistedQueue(caseId) {
   try {
     const raw = localStorage.getItem(`forensiq_queue_${caseId}`);
     const parsed = JSON.parse(raw || "[]");
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    // Never resurrect completed or failed uploads as active queue items
+    return parsed.filter(
+      (item) =>
+        item &&
+        item.status !== FILE_STATUS.SUCCESS &&
+        item.status !== FILE_STATUS.FAILED
+    );
   } catch {
     return [];
   }
@@ -126,10 +133,30 @@ function persistQueue(caseId, queueItems) {
   if (!caseId) return;
 
   try {
-    localStorage.setItem(
-      `forensiq_queue_${caseId}`,
-      JSON.stringify(queueItems),
-    );
+    // Only persist items that are actively in progress
+    const activeItems = (queueItems || [])
+      .filter(
+        (item) =>
+          item.status !== FILE_STATUS.SUCCESS &&
+          item.status !== FILE_STATUS.FAILED
+      )
+      .map((item) => ({
+        id: item.id,
+        fileName: item.file?.name || item.fileName || "document",
+        fileSize: item.file?.size || item.fileSize || 0,
+        type: item.type,
+        status: item.status,
+        error: item.error,
+      }));
+
+    if (activeItems.length > 0) {
+      localStorage.setItem(
+        `forensiq_queue_${caseId}`,
+        JSON.stringify(activeItems),
+      );
+    } else {
+      localStorage.removeItem(`forensiq_queue_${caseId}`);
+    }
   } catch {
     // Ignore storage quota issues.
   }
@@ -168,6 +195,8 @@ export default function EvidencePage() {
       return {
         id: `${file.name}-${file.size}-${Date.now()}-${Math.random()}`,
         file,
+        fileName: file.name,
+        fileSize: file.size,
         type: detectType(file),
         status: validationError ? FILE_STATUS.FAILED : FILE_STATUS.PENDING,
         error: validationError || "",
@@ -197,13 +226,15 @@ export default function EvidencePage() {
   }
 
   function clearCompleted() {
-    setQueue((prev) =>
-      prev.filter(
+    setQueue((prev) => {
+      const remaining = prev.filter(
         (item) =>
           item.status !== FILE_STATUS.SUCCESS &&
           item.status !== FILE_STATUS.FAILED,
-      ),
-    );
+      );
+      persistQueue(caseId, remaining);
+      return remaining;
+    });
   }
 
   /* ── Upload pipeline (processes each file independently) ── */
@@ -476,7 +507,7 @@ export default function EvidencePage() {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {item.file.name}
+                    {item.file?.name || item.fileName || "File"}
                   </div>
                   <div
                     style={{
@@ -489,7 +520,7 @@ export default function EvidencePage() {
                   >
                     <span>{item.type || "unknown"}</span>
                     <span>•</span>
-                    <span>{formatSize(item.file.size)}</span>
+                    <span>{formatSize(item.file?.size ?? item.fileSize)}</span>
                   </div>
                 </div>
 

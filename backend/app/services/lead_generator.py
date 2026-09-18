@@ -92,10 +92,16 @@ Respond ONLY with valid JSON in this exact format:
         model = _configure_gemini()
         response = model.generate_content(prompt)
         text = response.text.strip()
-        # Strip markdown code blocks if present
         if text.startswith("```"):
             text = "\n".join(text.split("\n")[1:-1])
-        return json.loads(text)
+        parsed = json.loads(text)
+        if isinstance(parsed, dict) and "leads" in parsed:
+            for lead in parsed["leads"]:
+                if "gap" in lead and "gap_description" not in lead:
+                    lead["gap_description"] = lead["gap"]
+                elif "gap_description" in lead and "gap" not in lead:
+                    lead["gap"] = lead["gap_description"]
+        return parsed
     except Exception as e:
         logger.error(f"Lead generator failed for case {case_id}: {e}")
         return {

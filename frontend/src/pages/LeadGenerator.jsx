@@ -181,7 +181,7 @@ export default function LeadGenerator() {
                         fontFamily: 'Space Grotesk, sans-serif', 
                         fontWeight: '600'
                       }}>
-                        {lead.gap_description}
+                        {lead.gap || lead.gap_description}
                       </div>
                       <div style={{
                         background: getPriorityColor(lead.priority),
@@ -198,20 +198,12 @@ export default function LeadGenerator() {
                       </div>
                     </div>
 
-                    {lead.mentioned_by && lead.mentioned_by.length > 0 && (
+                    {lead.mentioned_by && (Array.isArray(lead.mentioned_by) ? lead.mentioned_by.length > 0 : Boolean(lead.mentioned_by)) && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
                         <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Mentioned by:</span>
-                        {lead.mentioned_by.map((witness, wIdx) => (
-                          <span key={wIdx} style={{
-                            padding: '2px 10px',
-                            borderRadius: '999px',
-                            background: 'var(--bg-muted)',
-                            fontSize: '12px',
-                            color: 'var(--text-primary)'
-                          }}>
-                            {witness}
-                          </span>
-                        ))}
+                        <span style={{ fontSize: '13px', color: 'var(--text-primary)', fontWeight: '500' }}>
+                          {Array.isArray(lead.mentioned_by) ? lead.mentioned_by.join(', ') : lead.mentioned_by}
+                        </span>
                       </div>
                     )}
 

@@ -9,16 +9,18 @@ import {
   LogOut,
   FlaskConical,
   AlertCircle,
+  Shield,
+  MessageSquare,
 } from "lucide-react";
 
-import { Link } from "react-router-dom";
-import { useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ROUTES } from "../../constants";
 import { useAuth } from "../../hooks/useAuth";
 
 export default function Sidebar() {
   const { signOut } = useAuth();
   const { caseId } = useParams();
+  const navigate = useNavigate();
 
   const disabledStyle = {
     opacity: 0.45,
@@ -35,6 +37,22 @@ export default function Sidebar() {
     borderLeft: "3px solid transparent",
   };
 
+  const buttonItemStyle = {
+    ...itemStyle,
+    width: "100%",
+    border: "none",
+    background: "transparent",
+    fontSize: "14px",
+    cursor: "pointer",
+    textAlign: "left",
+  };
+
+  function handleOpenAssistant() {
+    if (!caseId) return;
+    window.dispatchEvent(new CustomEvent("open-ai-assistant"));
+    navigate(`/cases/${caseId}?assistant=open`);
+  }
+
   return (
     <aside
       style={{
@@ -44,6 +62,9 @@ export default function Sidebar() {
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
+        flexShrink: 0,
+        height: "100%",
+        overflowY: "auto",
       }}
     >
       <div>
@@ -59,6 +80,7 @@ export default function Sidebar() {
           Cases
         </Link>
 
+        {/* 1. Evidence */}
         {caseId ? (
           <Link to={`/cases/${caseId}/evidence`} style={itemStyle}>
             <Image size={18} />
@@ -71,6 +93,7 @@ export default function Sidebar() {
           </div>
         )}
 
+        {/* 2. Witnesses */}
         {caseId ? (
           <Link to={`/cases/${caseId}/witnesses`} style={itemStyle}>
             <Users size={18} />
@@ -83,6 +106,7 @@ export default function Sidebar() {
           </div>
         )}
 
+        {/* 3. Contradictions */}
         {caseId ? (
           <Link to={`/cases/${caseId}/contradictions`} style={itemStyle}>
             <GitMerge size={18} />
@@ -95,6 +119,7 @@ export default function Sidebar() {
           </div>
         )}
 
+        {/* 4. Timeline */}
         {caseId ? (
           <Link to={`/cases/${caseId}/timeline`} style={itemStyle}>
             <Clock size={18} />
@@ -107,6 +132,7 @@ export default function Sidebar() {
           </div>
         )}
 
+        {/* 5. Knowledge Graph */}
         {caseId ? (
           <Link to={`/cases/${caseId}/knowledge-graph`} style={itemStyle}>
             <Share2 size={18} />
@@ -119,18 +145,20 @@ export default function Sidebar() {
           </div>
         )}
 
+        {/* 6. Evidence Integrity */}
         {caseId ? (
-          <Link to={`/cases/${caseId}/hypotheses`} style={itemStyle}>
-            <FlaskConical size={18} />
-            Hypothesis Analyzer
+          <Link to={`/cases/${caseId}/blockchain`} style={itemStyle}>
+            <Shield size={18} />
+            Evidence Integrity
           </Link>
         ) : (
           <div style={{ ...itemStyle, ...disabledStyle }}>
-            <FlaskConical size={18} />
-            Hypothesis Analyzer
+            <Shield size={18} />
+            Evidence Integrity
           </div>
         )}
 
+        {/* 7. Investigation Leads */}
         {caseId ? (
           <Link to={`/cases/${caseId}/leads`} style={itemStyle}>
             <AlertCircle size={18} />
@@ -143,15 +171,42 @@ export default function Sidebar() {
           </div>
         )}
 
+        {/* 8. Hypothesis Analyzer */}
+        {caseId ? (
+          <Link to={`/cases/${caseId}/hypotheses`} style={itemStyle}>
+            <FlaskConical size={18} />
+            Hypothesis Analyzer
+          </Link>
+        ) : (
+          <div style={{ ...itemStyle, ...disabledStyle }}>
+            <FlaskConical size={18} />
+            Hypothesis Analyzer
+          </div>
+        )}
+
+        {/* 9. Report */}
         {caseId ? (
           <Link to={`/cases/${caseId}/report`} style={itemStyle}>
             <FileText size={18} />
-            Reports
+            Report
           </Link>
         ) : (
           <div style={{ ...itemStyle, ...disabledStyle }}>
             <FileText size={18} />
-            Reports
+            Report
+          </div>
+        )}
+
+        {/* 10. AI Assistant */}
+        {caseId ? (
+          <button onClick={handleOpenAssistant} style={buttonItemStyle}>
+            <MessageSquare size={18} />
+            AI Assistant
+          </button>
+        ) : (
+          <div style={{ ...itemStyle, ...disabledStyle }}>
+            <MessageSquare size={18} />
+            AI Assistant
           </div>
         )}
       </div>

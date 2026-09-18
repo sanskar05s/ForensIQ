@@ -1,3 +1,4 @@
+import torch
 from ultralytics import YOLO
 from app.services.xai_formatter import build_analysis
 
@@ -24,9 +25,11 @@ def detect_objects(image_path: str, threshold: float = 0.40) -> list:
     """
 
     model = get_model()
+    device = 0 if torch.cuda.is_available() else "cpu"
 
     results = model(
         image_path,
+        device=device,
         conf=threshold,     # 0.40 — forensic recall optimized
         imgsz=1280,         # was 640 — preserves fine detail
         iou=0.45,           # slightly permissive NMS for dense scenes

@@ -11,13 +11,30 @@ import {
 } from 'lucide-react';
 
 function timeAgo(dateStr) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
+  if (!dateStr) return 'Recently';
+  const date = new Date(dateStr);
+  const time = date.getTime();
+  if (isNaN(time)) return 'Recently';
+
+  const diffMs = Date.now() - time;
+  if (diffMs < 0) return 'Just now';
+
+  const diffSec = Math.floor(diffMs / 1000);
+  const mins = Math.floor(diffSec / 60);
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
+  const days = Math.floor(hrs / 24);
+
+  if (diffSec < 60) return 'Just now';
+  if (mins < 60) return `${mins} min${mins !== 1 ? 's' : ''} ago`;
+  if (hrs < 24) return `${hrs} hour${hrs !== 1 ? 's' : ''} ago`;
+  if (days === 1) return 'Yesterday';
+  if (days < 30) return `${days} days ago`;
+
+  return date.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 const getEventConfig = (type) => {
@@ -104,7 +121,7 @@ export default function ActivityLog() {
                           {activity.event_type.replace(/_/g, ' ')}
                         </span>
                         <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {timeAgo(activity.timestamp)}
+                          {timeAgo(activity.created_at || activity.timestamp)}
                         </span>
                       </div>
                       <p style={{ margin: 0, fontSize: '14px', color: 'var(--text-primary)', lineHeight: 1.5 }}>

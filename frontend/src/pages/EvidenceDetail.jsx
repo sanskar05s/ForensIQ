@@ -1449,253 +1449,106 @@ export default function EvidenceDetail() {
 
     if (evidence.type === "image") {
       return (
-        <div style={{ position: "relative", display: "inline-block", width: "100%" }}>
-          {/* Full image */}
-          <img
-            ref={previewImgRef}
-            src={signedUrl}
-            alt={evidence.filename}
-            onLoad={() => {
-              const el = previewImgRef.current;
-              if (!el) return;
-              setPreviewImgDims({
-                naturalW: el.naturalWidth,
-                naturalH: el.naturalHeight,
-                displayW: el.width,
-                displayH: el.height,
-              });
-            }}
-            style={{ display: "block", maxWidth: "100%", width: "100%", borderRadius: "8px" }}
-          />
-
-          {/* SVG bounding box overlay */}
-          {previewImgDims.displayW > 0 && overlayData.length > 0 && (
-            <svg
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: previewImgDims.displayW,
-                height: previewImgDims.displayH,
-                pointerEvents: "all",
+        <div style={{ width: "100%" }}>
+          {/* Full image with SVG bounding box overlay */}
+          <div style={{ position: "relative", width: "100%" }}>
+            <img
+              ref={previewImgRef}
+              src={signedUrl}
+              alt={evidence.filename}
+              onLoad={() => {
+                const el = previewImgRef.current;
+                if (!el) return;
+                setPreviewImgDims({
+                  naturalW: el.naturalWidth,
+                  naturalH: el.naturalHeight,
+                  displayW: el.width,
+                  displayH: el.height,
+                });
               }}
-              viewBox={`0 0 ${previewImgDims.displayW} ${previewImgDims.displayH}`}
-            >
-              {overlayData.map((det) => {
-                if (!det.bbox || det.bbox.length < 4) return null;
-                const isSelected = previewSelectedDet?.detection_index === det.detection_index;
-                const isNorm = det.bbox.every((v) => v >= 0 && v <= 1);
-                const [bx1, by1, bx2, by2] = det.bbox;
-                const scaleX = previewImgDims.displayW / previewImgDims.naturalW;
-                const scaleY = previewImgDims.displayH / previewImgDims.naturalH;
+              style={{ display: "block", maxWidth: "100%", width: "100%", borderRadius: "8px" }}
+            />
 
-                const rx = isNorm ? bx1 * previewImgDims.displayW : bx1 * scaleX;
-                const ry = isNorm ? by1 * previewImgDims.displayH : by1 * scaleY;
-                const rw = isNorm
-                  ? (bx2 - bx1) * previewImgDims.displayW
-                  : (bx2 - bx1) * scaleX;
-                const rh = isNorm
-                  ? (by2 - by1) * previewImgDims.displayH
-                  : (by2 - by1) * scaleY;
+            {/* SVG bounding box overlay */}
+            {previewImgDims.displayW > 0 && overlayData.length > 0 && (
+              <svg
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: previewImgDims.displayW,
+                  height: previewImgDims.displayH,
+                  pointerEvents: "all",
+                }}
+                viewBox={`0 0 ${previewImgDims.displayW} ${previewImgDims.displayH}`}
+              >
+                {overlayData.map((det) => {
+                  if (!det.bbox || det.bbox.length < 4) return null;
+                  const isSelected = previewSelectedDet?.detection_index === det.detection_index;
+                  const isNorm = det.bbox.every((v) => v >= 0 && v <= 1);
+                  const [bx1, by1, bx2, by2] = det.bbox;
+                  const scaleX = previewImgDims.displayW / previewImgDims.naturalW;
+                  const scaleY = previewImgDims.displayH / previewImgDims.naturalH;
 
-                return (
-                  <g
-                    key={det.detection_index}
-                    onClick={() =>
-                      setPreviewSelectedDet(isSelected ? null : det)
-                    }
-                    style={{ cursor: "pointer" }}
-                  >
-                    <rect
-                      x={rx}
-                      y={ry}
-                      width={rw}
-                      height={rh}
-                      fill={isSelected ? "rgba(59,130,246,0.08)" : "transparent"}
-                      stroke={
-                        isSelected
-                          ? "#3B82F6"
-                          : det.is_identified
-                          ? "#10B981"
-                          : "rgba(255,255,255,0.5)"
+                  const rx = isNorm ? bx1 * previewImgDims.displayW : bx1 * scaleX;
+                  const ry = isNorm ? by1 * previewImgDims.displayH : by1 * scaleY;
+                  const rw = isNorm
+                    ? (bx2 - bx1) * previewImgDims.displayW
+                    : (bx2 - bx1) * scaleX;
+                  const rh = isNorm
+                    ? (by2 - by1) * previewImgDims.displayH
+                    : (by2 - by1) * scaleY;
+
+                  return (
+                    <g
+                      key={det.detection_index}
+                      onClick={() =>
+                        setPreviewSelectedDet(isSelected ? null : det)
                       }
-                      strokeWidth={isSelected ? 2.5 : 1.5}
-                      rx={3}
-                    />
-                    {/* Label above bbox */}
-                    <text
-                      x={rx + 4}
-                      y={ry > 16 ? ry - 5 : ry + rh + 14}
-                      fill={
-                        isSelected
-                          ? "#3B82F6"
-                          : det.is_identified
-                          ? "#10B981"
-                          : "rgba(255,255,255,0.85)"
-                      }
-                      fontSize={10}
-                      fontFamily="JetBrains Mono, monospace"
-                      style={{ pointerEvents: "none" }}
+                      style={{ cursor: "pointer" }}
                     >
-                      {det.label}
-                      {det.is_identified
-                        ? ` • ${det.identifications?.[0]?.canonical_name || ""}`
-                        : ` ${Math.round(det.confidence * 100)}%`}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
-          )}
-
-          {/* Selected detection detail panel */}
-          {previewSelectedDet && (
-            <div
-              style={{
-                position: "absolute",
-                top: 8,
-                right: 8,
-                width: 220,
-                background: "rgba(15,20,30,0.92)",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                padding: 12,
-                backdropFilter: "blur(8px)",
-                zIndex: 10,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      color: "#64748B",
-                      textTransform: "uppercase",
-                      letterSpacing: 0.5,
-                    }}
-                  >
-                    AI detected
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: "#fff",
-                      marginTop: 2,
-                      textTransform: "capitalize",
-                    }}
-                  >
-                    {previewSelectedDet.label}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color:
-                        previewSelectedDet.confidence >= 0.7
-                          ? "#10B981"
-                          : "#F59E0B",
-                      fontFamily: "JetBrains Mono, monospace",
-                    }}
-                  >
-                    {Math.round(previewSelectedDet.confidence * 100)}% confidence
-                  </div>
-                </div>
-                <button
-                  onClick={() => setPreviewSelectedDet(null)}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: "#64748B",
-                    cursor: "pointer",
-                    fontSize: 16,
-                    lineHeight: 1,
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-
-              {/* Human identifications */}
-              {previewSelectedDet.identifications?.length > 0 ? (
-                <div
-                  style={{
-                    marginTop: 10,
-                    paddingTop: 8,
-                    borderTop: "1px solid rgba(255,255,255,0.1)",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 10,
-                      color: "#10B981",
-                      textTransform: "uppercase",
-                      letterSpacing: 0.5,
-                      marginBottom: 4,
-                    }}
-                  >
-                    Human identification
-                  </div>
-                  {previewSelectedDet.identifications.map((id, j) => (
-                    <div key={j} style={{ marginBottom: 4 }}>
-                      <div
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: "#fff",
-                        }}
+                      <rect
+                        x={rx}
+                        y={ry}
+                        width={rw}
+                        height={rh}
+                        fill={isSelected ? "rgba(59,130,246,0.08)" : "transparent"}
+                        stroke={
+                          isSelected
+                            ? "#3B82F6"
+                            : det.is_identified
+                            ? "#10B981"
+                            : "rgba(255,255,255,0.5)"
+                        }
+                        strokeWidth={isSelected ? 2.5 : 1.5}
+                        rx={3}
+                      />
+                      {/* Label above bbox */}
+                      <text
+                        x={rx + 4}
+                        y={ry > 16 ? ry - 5 : ry + rh + 14}
+                        fill={
+                          isSelected
+                            ? "#3B82F6"
+                            : det.is_identified
+                            ? "#10B981"
+                            : "rgba(255,255,255,0.85)"
+                        }
+                        fontSize={10}
+                        fontFamily="JetBrains Mono, monospace"
+                        style={{ pointerEvents: "none" }}
                       >
-                        {id.canonical_name}
-                      </div>
-                      <div style={{ fontSize: 10, color: "#94A3B8" }}>
-                        {id.identified_by} · {id.identification_source}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div
-                  style={{
-                    marginTop: 8,
-                    fontSize: 11,
-                    color: "#475569",
-                    fontStyle: "italic",
-                  }}
-                >
-                  Not identified
-                </div>
-              )}
-
-              {/* Quick "Add ID" button */}
-              <button
-                onClick={() => {
-                  setPreviewSelectedDet(null);
-                  openIdentificationModal(
-                    previewSelectedDet.detection_index,
-                    previewSelectedDet.label
+                        {det.label}
+                        {det.is_identified
+                          ? ` • ${det.identifications?.[0]?.canonical_name || ""}`
+                          : ` ${Math.round(det.confidence * 100)}%`}
+                      </text>
+                    </g>
                   );
-                }}
-                style={{
-                  marginTop: 10,
-                  width: "100%",
-                  padding: "5px 0",
-                  fontSize: 11,
-                  background: "transparent",
-                  border: "1px solid #3B82F6",
-                  borderRadius: 5,
-                  color: "#3B82F6",
-                  cursor: "pointer",
-                }}
-              >
-                {previewSelectedDet.is_identified ? "Edit ID" : "Add ID"}
-              </button>
-            </div>
-          )}
+                })}
+              </svg>
+            )}
+          </div>
 
           {/* Legend */}
           {overlayData.length > 0 && (
@@ -1712,6 +1565,154 @@ export default function EvidenceDetail() {
               <span>── Detected</span>
               <span style={{ color: "#10B981" }}>── Identified</span>
               <span style={{ color: "#3B82F6" }}>── Selected</span>
+            </div>
+          )}
+
+          {/* Selected detection detail panel - repositioned below image */}
+          {previewSelectedDet && (
+            <div
+              style={{
+                marginTop: 14,
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-md)",
+                padding: "16px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "var(--text-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    AI detected
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 16,
+                      fontWeight: 700,
+                      color: "var(--text-primary)",
+                      marginTop: 2,
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {previewSelectedDet.label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color:
+                        previewSelectedDet.confidence >= 0.7
+                          ? "var(--success)"
+                          : "var(--warning)",
+                      fontFamily: "JetBrains Mono, monospace",
+                      marginTop: 2,
+                    }}
+                  >
+                    {Math.round(previewSelectedDet.confidence * 100)}% confidence
+                  </div>
+                </div>
+                <button
+                  onClick={() => setPreviewSelectedDet(null)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                    fontSize: 18,
+                    lineHeight: 1,
+                    padding: "4px",
+                  }}
+                  title="Close panel"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Human identifications */}
+              {previewSelectedDet.identifications?.length > 0 ? (
+                <div
+                  style={{
+                    marginTop: 12,
+                    paddingTop: 10,
+                    borderTop: "1px solid var(--border)",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "var(--success)",
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                      marginBottom: 6,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Human identification
+                  </div>
+                  {previewSelectedDet.identifications.map((id, j) => (
+                    <div key={j} style={{ marginBottom: 6 }}>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: "var(--text-primary)",
+                        }}
+                      >
+                        {id.canonical_name}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                        {id.identified_by} · {id.identification_source}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    marginTop: 10,
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    fontStyle: "italic",
+                  }}
+                >
+                  Not identified
+                </div>
+              )}
+
+              {/* Quick "Add ID" / "Edit ID" button */}
+              <div style={{ marginTop: 12 }}>
+                <button
+                  onClick={() => {
+                    const detIndex = previewSelectedDet.detection_index;
+                    const detLabel = previewSelectedDet.label;
+                    setPreviewSelectedDet(null);
+                    openIdentificationModal(detIndex, detLabel);
+                  }}
+                  style={{
+                    padding: "6px 14px",
+                    fontSize: 12,
+                    background: "var(--accent-dim, rgba(37,99,235,0.12))",
+                    border: "1px solid var(--accent)",
+                    borderRadius: "var(--radius-sm)",
+                    color: "var(--accent)",
+                    cursor: "pointer",
+                    fontWeight: 500,
+                  }}
+                >
+                  {previewSelectedDet.is_identified ? "Edit Identification" : "Add Identification"}
+                </button>
+              </div>
             </div>
           )}
         </div>

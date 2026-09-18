@@ -255,7 +255,6 @@ def check_time_contradiction(claims_a: List[Dict],
                 "claim_a":        ca["sentence"],
                 "claim_b":        cb["sentence"],
                 "severity":       severity,
-                "confidence":     confidence,
                 "nli_confidence": confidence,
                 "xai_explanation": (
                     f"Rule-based TIME contradiction detected. "
@@ -307,7 +306,6 @@ def check_color_contradiction(claims_a: List[Dict],
                         "claim_a":        ca["sentence"],
                         "claim_b":        cb["sentence"],
                         "severity":       severity,
-                        "confidence":     confidence,
                         "nli_confidence": confidence,
                         "xai_explanation": (
                             f"Rule-based COLOR contradiction detected. "
@@ -384,7 +382,6 @@ def check_quantity_contradiction(claims_a: List[Dict],
                 "claim_a":        ca["sentence"],
                 "claim_b":        cb["sentence"],
                 "severity":       severity,
-                "confidence":     confidence,
                 "nli_confidence": confidence,
                 "xai_explanation": (
                     f"Rule-based QUANTITY contradiction detected. "
@@ -442,7 +439,6 @@ def check_direction_contradiction(claims_a: List[Dict],
                     "claim_a":        ca["sentence"],
                     "claim_b":        cb["sentence"],
                     "severity":       severity,
-                    "confidence":     confidence,
                     "nli_confidence": confidence,
                     "xai_explanation": (
                         f"Rule-based DIRECTION contradiction detected. "

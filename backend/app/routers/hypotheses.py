@@ -8,23 +8,25 @@ router = APIRouter()
 
 
 class HypothesisRequest(BaseModel):
-    title: str
-    description: str
+    title: str = ""
+    description: str = ""
 
 
 @router.post("/hypotheses/cases/{case_id}")
 async def create_hypothesis(case_id: str, body: HypothesisRequest):
-    if not body.title.strip() or not body.description.strip():
-        raise HTTPException(status_code=400, detail="Title and description required")
+    hyp_title = (body.title or body.description or "").strip()
+    hyp_desc = (body.description or body.title or "").strip()
+    if not hyp_title:
+        raise HTTPException(status_code=400, detail="Hypothesis is required")
 
     supabase = get_supabase_client()
-    result = analyze_hypothesis(case_id, body.title, body.description, supabase)
+    result = analyze_hypothesis(case_id, hyp_title, hyp_desc, supabase)
 
     # Store the hypothesis and analysis
     db_result = supabase.table("hypotheses").insert({
         "case_id": case_id,
-        "title": body.title,
-        "description": body.description,
+        "title": hyp_title,
+        "description": hyp_desc,
         "supporting":       result.get("supporting", []),
         "contradicting":    result.get("contradicting", []),
         "neutral":          result.get("neutral", []),
