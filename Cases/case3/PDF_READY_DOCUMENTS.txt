@@ -1,0 +1,18 @@
+DOCUMENT 1 — HARBOR JUNCTION CONTROLLER NOTE
+Fictional training record. All corrected times are local case time (Asia/Kolkata).
+Site: Harbor Junction, River Road at Market Street
+Date: 19 September 2026
+Controller observation: At 6:45 PM, comparison with dispatch showed the intersection camera clock was four minutes fast.
+Controller log: Northbound signal changed to red at 6:40 PM local time.
+Important: Camera display time should be reduced by four minutes when comparing a displayed frame time with the controller log. Original image metadata must be preserved.
+Prepared by: Ritu Das, Signal Technician
+
+DOCUMENT 2 — BELLWETHER DISPATCH TIMELINE
+Fictional training record. Times are local case time, Asia/Kolkata.
+Event number: BW-0919-1841
+Location: Harbor Junction, River Road at Market Street
+6:41 PM — Emergency call received for cyclist injury and vehicle collision.
+6:42 PM — Traffic unit dispatched.
+6:44 PM — Officer Nikhil Rao arrived.
+6:48 PM — Scene perimeter established; ambulance had departed with cyclist.
+Note: Dispatch timestamps are recorded to the nearest minute and do not identify which vehicle caused the collision.

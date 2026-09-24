@@ -1,0 +1,18 @@
+DOCUMENT 1 — NORTHLINE BADGE ACCESS EXTRACT
+Fictional training record. Local time zone: Asia/Kolkata.
+Site: Northline Archive, Westbridge Industrial Estate
+Door: Rear Entrance / Dock 3
+Date: 18 September 2026
+21:58 — Badge 17 accepted
+Badge holder on access roster: Alia Rao, contractor
+System limitation: This reader logs a credential swipe. It does not capture a face or prove who carried the badge.
+Prepared by: Kira Bose, Access Control Technician
+
+DOCUMENT 2 — NORTHLINE INVENTORY RECOUNT
+Fictional training record. Location: Secure storage aisle, Northline Archive.
+Date: 18 September 2026
+21:45 — Four laptops counted on shelf. Asset IDs include Laptop 204 and Laptop 205.
+22:25 — Two laptops counted on shelf. Laptop 204 and Laptop 205 were not on the shelf during this recount.
+No removal receipt was located in the paper tray at the time of recount.
+Prepared by: Pooja Nair, Inventory Clerk
+Note: This sheet records two separate counts. It does not identify who moved the equipment or when exactly it left.

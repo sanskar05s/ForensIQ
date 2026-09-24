@@ -1,0 +1,21 @@
+DOCUMENT 1 — QUICKSTOP POS CLOSEOUT
+Fictional training record. Do not treat as a real business record.
+Business: QuickStop Grocery, 4th Avenue at Pine Street, Bellwether
+Incident date: 17 September 2026
+Register: Front counter / Till 1
+Last balanced closeout before incident: 10:55 PM, local time
+Reported alarm activation: 11:15 PM, local time
+Cash count after incident: approximately $450 short
+Manager note: Amount is an estimate pending a second count. This sheet does not identify who took the money.
+Prepared by: Nora Bell, Store Manager
+
+DOCUMENT 2 — BELLWETHER DISPATCH EXTRACT
+Fictional training record. Times are local case time, Asia/Kolkata.
+Event number: BW-0917-2316
+Location: QuickStop Grocery, 4th Avenue at Pine Street
+Caller: Elena Rostova
+Call received: 11:16 PM, 17 September 2026
+Unit assigned: Patrol 12 at 11:17 PM
+Unit arrived: 11:19 PM
+Initial note: Caller reported a person running north and a phone beside the curb. The caller did not handle the phone.
+Evidence reminder: Dispatch times are recorded to the nearest minute.
