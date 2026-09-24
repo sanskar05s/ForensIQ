@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 from typing import List, Dict, Optional
 # Matches sentences where the witness describes their own static position.
 # "I was inside", "I was outside", "we were inside", "I stood inside"
@@ -116,13 +117,11 @@ LOCATION_NUMBER_PREFIXES = [
     'platform', 'apartment', 'unit', 'suite', 'sector',
     'block', 'lane', 'avenue', 'route', 'district',
 ]
-# Time patterns — ordered from most specific to least
+# Time patterns — restricted strictly to valid clock values
 TIME_PATTERNS = [
-    r'\b\d{1,2}:\d{2}\s*(?:am|pm|AM|PM)?\b',       # 9:30 PM, 14:00
-    r'\b\d{1,2}\s*(?:am|pm|AM|PM)\b',                # 9pm, 11 AM
-    r'\b(?:midnight|noon)\b',
-    r'\b(?:early\s+morning|late\s+night|late\s+evening)\b',
-    r'\b(?:morning|afternoon|evening|night)\b',
+    r"\b(?:0?[1-9]|1[0-2]):[0-5]\d\s*[ap]\.?m\.?\b",
+    r"\b(?:0?[1-9]|1[0-2])\s*[ap]\.?m\.?\b",
+    r"\b(?:[01]?\d|2[0-3]):[0-5]\d\b",
 ]
 
 COLOR_WORDS = [
@@ -176,56 +175,29 @@ def _parse_time_to_hours(time_str: str) -> Optional[float]:
     "8:30 PM"  → 20.5
     "8:10 PM"  → 20.167
     "9 AM"     → 9.0
-    "midnight" → 0.0
-    Returns None if unparseable.
+    Returns None for broad periods and invalid clock values.
     """
     if not time_str:
         return None
-    lower = time_str.lower().strip()
 
-    # Word-based times → exact decimal hours
-    WORD_HOURS = {
-        'midnight': 0.0,  'noon': 12.0, 'midday': 12.0,
-        'morning':  8.0,  'afternoon': 14.0,
-        'evening':  19.0, 'night': 21.0,
-    }
-    for word, val in WORD_HOURS.items():
-        if word in lower:
-            return val
-
-    # Ambiguous time without AM/PM — skip to avoid false positives
-    has_ampm = 'am' in lower or 'pm' in lower
-    has_24h = bool(re.search(r'\b([01]?\d|2[0-3]):\d{2}\b', lower))
-    if not has_ampm and not has_24h:
-        return None
-
-    # HH:MM AM/PM
-    m = re.search(r'(\d{1,2}):(\d{2})\s*(am|pm)', lower)
-    if m:
-        h, minute = int(m.group(1)), int(m.group(2))
-        am_pm = m.group(3)
-        if am_pm == 'pm' and h != 12:
-            h += 12
-        elif am_pm == 'am' and h == 12:
-            h = 0
-        return h + minute / 60.0
-
-    # HH:MM 24-hour
-    m = re.search(r'\b([01]?\d|2[0-3]):(\d{2})\b', lower)
-    if m:
-        return int(m.group(1)) + int(m.group(2)) / 60.0
-
-    # H AM/PM only (no minutes)
-    m = re.search(r'(\d{1,2})\s*(am|pm)', lower)
-    if m:
-        h = int(m.group(1))
-        am_pm = m.group(2)
-        if am_pm == 'pm' and h != 12:
-            h += 12
-        elif am_pm == 'am' and h == 12:
-            h = 0
-        return float(h)
-
+    cleaned = re.sub(r"\.", "", time_str.strip().upper())
+    for pattern, fmt in [
+        (r"(?:0?[1-9]|1[0-2]):[0-5]\d\s*[AP]M", "%I:%M %p"),
+        (r"(?:0?[1-9]|1[0-2]):[0-5]\d\s*[AP]M", "%I:%M%p"),
+        (r"(?:0?[1-9]|1[0-2])\s*[AP]M", "%I %p"),
+        (r"(?:0?[1-9]|1[0-2])\s*[AP]M", "%I%p"),
+        (r"(?:[01]?\d|2[0-3]):[0-5]\d", "%H:%M"),
+    ]:
+        m = re.search(pattern, cleaned)
+        if m:
+            val = m.group(0).strip()
+            val_norm = re.sub(r"\s+", " ", val)
+            for f in (fmt, fmt.replace(" ", "")):
+                try:
+                    dt = datetime.strptime(val_norm, f)
+                    return dt.hour + dt.minute / 60.0
+                except ValueError:
+                    pass
     return None
 
 
@@ -374,27 +346,77 @@ def extract_quantity_claims(text: str) -> List[Dict]:
 
     return claims
 
+_DIRECTION_TARGET_RE = re.compile(
+    r"\b(?:left|right)\s+(?:\w+\s+){0,2}"
+    r"(hand|arm|leg|foot|pocket|sidewalk|lane|side|door|entrance|"
+    r"window|counter|street|road|vehicle|car)\b",
+    re.IGNORECASE,
+)
+
+_MOVEMENT_RE = re.compile(
+    r"\b(walk(?:ed|ing)?|run(?:ning)?|ran|head(?:ed|ing)?|"
+    r"travel(?:ed|ling)?|mov(?:ed|ing))\b",
+    re.IGNORECASE,
+)
+
+
+def _direction_context(sentence: str, direction: str) -> Optional[str]:
+    lower = sentence.lower()
+    matches = list(re.finditer(rf"\b{re.escape(direction)}\b", lower))
+    if not matches:
+        return None
+
+    for match in matches:
+        start, end = match.span()
+        after = lower[end:end + 24]
+
+        # "Right before/after" is temporal language, not direction.
+        if direction in {"left", "right"} and re.match(
+            r"\s+(before|after|away|now)\b", after
+        ):
+            continue
+
+        if direction in {"left", "right"}:
+            target = _DIRECTION_TARGET_RE.search(sentence[max(0, start - 4):])
+            if target and target.start() <= 4:
+                return f"object:{target.group(1).lower()}"
+
+            before = lower[max(0, start - 30):start]
+            if re.search(r"\bturn(?:ed|s|ing)?\s*$", before):
+                return "action:turn"
+            continue
+
+        # Cardinal directions only count when attached to movement.
+        nearby = lower[max(0, start - 50):min(len(lower), end + 30)]
+        if _MOVEMENT_RE.search(nearby):
+            return "action:travel"
+
+    return None
+
+
 def extract_direction_claims(text: str) -> List[Dict]:
-    """
-    Returns sentences containing directional expressions.
-    Adds is_self_location flag to distinguish:
-    - "I was inside the store" (witness position — should NOT trigger contradiction)
-    - "the suspect ran inside" (subject movement — CAN trigger contradiction)
-    """
     claims = []
     for sentence in split_into_sentences(text):
         lower = sentence.lower()
+        is_self_location = bool(_SELF_LOCATION_RE.search(lower))
+
         for direction in sorted(DIRECTION_WORDS, key=len, reverse=True):
-            if re.search(rf'\b{re.escape(direction)}\b', lower):
-                # Flag self-location: witness describing their own static position.
-                is_self_location = bool(_SELF_LOCATION_RE.search(lower))
-                claims.append({
-                    "sentence": sentence,
-                    "extracted_value": direction,
-                    "claim_type": "direction",
-                    "is_self_location": is_self_location
-                })
-                break
+            if not re.search(rf"\b{re.escape(direction)}\b", lower):
+                continue
+
+            context = _direction_context(sentence, direction)
+            if not context:
+                continue
+
+            claims.append({
+                "sentence": sentence,
+                "extracted_value": direction,
+                "claim_type": "direction",
+                "is_self_location": is_self_location,
+                "context": context,
+            })
+            break
+
     return claims
 
 

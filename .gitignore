@@ -42,3 +42,6 @@ Thumbs.db
 # Supabase / Secrets
 # =========================
 *service_account*.json
+
+# PowerShell cache
+Microsoft/

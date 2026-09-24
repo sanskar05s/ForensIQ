@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Clock, AlertTriangle } from "lucide-react";
 
@@ -24,10 +24,45 @@ const FILTER_OPTIONS = [
   { value: "low-conflict", label: "Flagged" },
 ];
 
+const CASE_TIMEZONE = import.meta.env.VITE_CASE_TIMEZONE || "Asia/Kolkata";
+
 /* ─── Helpers ─── */
 
+function getTemporalMetadata(event) {
+  return (event.source_ids || []).find((source) => source.type === "statement") || {};
+}
+
+function formatDuration(seconds) {
+  if (seconds >= 60) {
+    const minutes = seconds / 60;
+    return `${Number.isInteger(minutes) ? minutes : minutes.toFixed(1)} minute${minutes === 1 ? "" : "s"}`;
+  }
+  return `${seconds} second${seconds === 1 ? "" : "s"}`;
+}
+
 function formatEventTime(event) {
+  const temporal = getTemporalMetadata(event);
+
   if (!event.timestamp_hard) {
+    const min = temporal.offset_min_seconds;
+    const max = temporal.offset_max_seconds;
+
+    if (
+      temporal.temporal_kind === "relative" &&
+      typeof min === "number" &&
+      typeof max === "number"
+    ) {
+      if (min === 0) {
+        return `Within ${formatDuration(max)} after the preceding event`;
+      }
+
+      if (max - min <= 60) {
+        return `≈${formatDuration(Math.round((min + max) / 2))} after the preceding event`;
+      }
+
+      return `${formatDuration(min)}–${formatDuration(max)} after the preceding event`;
+    }
+
     return `Relative order #${event.relative_order ?? "?"}`;
   }
 
@@ -36,6 +71,9 @@ function formatEventTime(event) {
     return `Relative order #${event.relative_order ?? "?"}`;
   }
 
+  const approximatePrefix =
+    temporal.time_precision === "approximate" ? "≈" : "";
+
   // Evidence (metadata): show full date + time — upload time is reliable
   if (event.source === "metadata") {
     return (
@@ -43,21 +81,27 @@ function formatEventTime(event) {
         day: "2-digit",
         month: "short",
         year: "numeric",
+        timeZone: CASE_TIMEZONE,
       }) +
       " · " +
       dt.toLocaleTimeString("en-GB", {
         hour: "2-digit",
         minute: "2-digit",
+        timeZone: CASE_TIMEZONE,
       })
     );
   }
 
   // Witness direct: show only time — date may be inferred from EXIF
   if (event.source === "witness-direct") {
-    return dt.toLocaleTimeString("en-GB", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return (
+      approximatePrefix +
+      dt.toLocaleTimeString("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: CASE_TIMEZONE,
+      })
+    );
   }
 
   // Witness relative (anchored): show time with ≈ prefix
@@ -67,6 +111,7 @@ function formatEventTime(event) {
       dt.toLocaleTimeString("en-GB", {
         hour: "2-digit",
         minute: "2-digit",
+        timeZone: CASE_TIMEZONE,
       })
     );
   }
@@ -77,6 +122,7 @@ function formatEventTime(event) {
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: CASE_TIMEZONE,
   });
 }
 
@@ -100,7 +146,7 @@ function getConfidenceBadge(state) {
   return { label: "⚠ CONFLICT", bg: "rgba(245,158,11,0.12)", color: "var(--warning)" };
 }
 
-function parseDescription(desc, source) {
+function parseDescription(desc) {
   if (!desc) return { label: null, text: desc || "" };
   const match = desc.match(/^\[([^\]]+)\]\s*(.*)/s);
   if (match) {
@@ -122,11 +168,7 @@ export default function Timeline() {
   const [runError, setRunError] = useState("");
   const [filter, setFilter] = useState("all");
 
-  useEffect(() => {
-    fetchEvents();
-  }, [caseId]);
-
-  async function fetchEvents() {
+  const fetchEvents = useCallback(async () => {
     setListLoading(true);
     try {
       const res = await apiClient(`/timeline/cases/${caseId}`);
@@ -136,7 +178,24 @@ export default function Timeline() {
     } finally {
       setListLoading(false);
     }
-  }
+  }, [caseId]);
+
+  useEffect(() => {
+    let active = true;
+    apiClient(`/timeline/cases/${caseId}`)
+      .then((res) => {
+        if (active) setEvents(res.events || []);
+      })
+      .catch(() => {
+        if (active) setEvents([]);
+      })
+      .finally(() => {
+        if (active) setListLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [caseId]);
 
   async function handleBuild() {
     setRunning(true);
@@ -352,7 +411,7 @@ export default function Timeline() {
               const isRelative = event.source === "witness-relative";
               const srcBadge = getSourceBadge(event.source);
               const confBadge = getConfidenceBadge(event.confidence_state);
-              const parsed = parseDescription(event.description, event.source);
+              const parsed = parseDescription(event.description);
               const conflictRefs = (event.conflicts_with || []).map((ref) => {
                 const match = events.find((e) => e.id === ref);
                 return match ? match.relative_order : ref;

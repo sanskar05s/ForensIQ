@@ -106,6 +106,23 @@ _SUBJECTS: dict[str, re.Pattern] = {
     ),
 }
 
+# Keep explicit vehicle types distinct at the NLI gate. The broad VEHICLE
+# category alone incorrectly treated an SUV, sedan, and generic car as the
+# same object, allowing unrelated color claims to reach NLI.
+_VEHICLE_SUBTYPES: dict[str, re.Pattern] = {
+    "SUV": re.compile(r"\bsuvs?\b", re.I),
+    "SEDAN": re.compile(r"\bsedans?\b", re.I),
+    "HATCHBACK": re.compile(r"\bhatchbacks?\b", re.I),
+    "MOTORCYCLE": re.compile(r"\b(?:motorcycles?|motorbikes?)\b", re.I),
+    "SCOOTER": re.compile(r"\bscooters?\b", re.I),
+    "VAN": re.compile(r"\bvans?\b", re.I),
+    "TRUCK": re.compile(r"\b(?:trucks?|lorries?)\b", re.I),
+    "BUS": re.compile(r"\bbuses\b", re.I),
+    "JEEP": re.compile(r"\bjeeps?\b", re.I),
+    "TAXI": re.compile(r"\b(?:cabs?|taxis?)\b", re.I),
+    "RICKSHAW": re.compile(r"\brickshaws?\b", re.I),
+}
+
 # ── Descriptive attributes (can logically contradict) ─────────────────────────
 
 _DESCRIPTIVE: dict[str, re.Pattern] = {
@@ -174,7 +191,7 @@ class SAVPair:
     Subject-Attribute pair — the atomic unit of comparison.
     Two statements are NLI candidates when their SAVPair sets overlap.
     """
-    subject:   str    # VEHICLE | SUSPECT | VICTIM | WEAPON | EMERGENCY
+    subject:   str    # Subject category, with explicit vehicle subtype when known
     attribute: str    # COLOR | COUNT | DIRECTION | APPEARANCE | BEHAVIOR | CONDITION
 
 
@@ -197,11 +214,31 @@ def _extract_sav_pairs(statement: dict) -> Set[SAVPair]:
     if not text:
         return set()
 
-    # Step 1: Which subjects are present?
+    # Step 1: Which subjects are present? Retain a vehicle's explicit subtype
+    # so (VEHICLE:SUV, COLOR) cannot match (VEHICLE:SEDAN, COLOR).
     present_subjects: Set[str] = set()
     for subject_name, pattern in _SUBJECTS.items():
         if pattern.search(text):
-            present_subjects.add(subject_name)
+            # These patterns describe actions or attributes, not the object
+            # whose claim should be compared. Pairing them with every
+            # descriptive attribute makes unrelated moving vehicles overlap.
+            if subject_name in {"SUSPECT_GEAR", "MOVING_ENTITY"}:
+                continue
+            if subject_name != "VEHICLE":
+                present_subjects.add(subject_name)
+                continue
+
+            subtypes = {
+                subtype
+                for subtype, subtype_pattern in _VEHICLE_SUBTYPES.items()
+                if subtype_pattern.search(text)
+            }
+            if subtypes:
+                present_subjects.update(f"VEHICLE:{subtype}" for subtype in subtypes)
+            else:
+                # Generic terms such as "car" and "vehicle" still compare
+                # with other generic vehicle descriptions.
+                present_subjects.add("VEHICLE:GENERIC")
 
     if not present_subjects:
         return set()

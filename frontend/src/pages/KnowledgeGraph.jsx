@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Share2 } from "lucide-react";
 import cytoscape from "cytoscape";
@@ -47,12 +47,7 @@ export default function KnowledgeGraph() {
       .catch(() => {});
   }, [caseId]);
 
-  /* Fetch graph data */
-  useEffect(() => {
-    fetchGraph();
-  }, [caseId]);
-
-  async function fetchGraph() {
+  const fetchGraph = useCallback(async () => {
     setLoading(true);
     try {
       const res = await apiClient(`/graph/cases/${caseId}`);
@@ -62,7 +57,25 @@ export default function KnowledgeGraph() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [caseId]);
+
+  /* Fetch graph data */
+  useEffect(() => {
+    let active = true;
+    apiClient(`/graph/cases/${caseId}`)
+      .then((res) => {
+        if (active) setGraphData(res);
+      })
+      .catch(() => {
+        if (active) setGraphData(null);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [caseId]);
 
   /* Initialize Cytoscape when graph data or filter options change */
   useEffect(() => {

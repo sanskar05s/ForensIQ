@@ -14,13 +14,13 @@ OPPOSITE_DIRECTIONS = {
     frozenset(['inside', 'outside']),
 }
 
-# Synonym groups for color context matching.
-# If context_a and context_b are in the SAME synonym group,
-# treat them as matching even if the exact words differ.
+# Synonym groups for color context matching. Vehicle body styles are kept
+# distinct: a sedan and an SUV may be different vehicles in the same event.
+VEHICLE_GENERIC_SYNONYMS = frozenset({"car", "vehicle", "auto", "automobile"})
 VEHICLE_SYNONYMS = frozenset([
-    "car", "vehicle", "van", "truck", "auto", "automobile",
-    "motorcycle", "motorbike", "bike", "scooter", "cab", "taxi",
-    "suv", "sedan", "hatchback", "lorry", "bus", "jeep",
+    *VEHICLE_GENERIC_SYNONYMS,
+    "van", "truck", "motorcycle", "motorbike", "bike", "scooter",
+    "cab", "taxi", "suv", "sedan", "hatchback", "lorry", "bus", "jeep",
 ])
 BAG_SYNONYMS = frozenset([
     "bag", "backpack", "sack", "pouch", "luggage", "suitcase",
@@ -52,6 +52,13 @@ def _contexts_match(ctx_a: str, ctx_b: str) -> bool:
     group_a = _synonym_group(ctx_a)
     group_b = _synonym_group(ctx_b)
     if group_a and group_b and group_a is group_b:
+        if group_a is VEHICLE_SYNONYMS:
+            # Only generic vehicle labels can match each other. Do not merge
+            # a generic label with a body style or compare different styles.
+            return (
+                ctx_a.lower().strip() in VEHICLE_GENERIC_SYNONYMS
+                and ctx_b.lower().strip() in VEHICLE_GENERIC_SYNONYMS
+            )
         return True
     return False
 
@@ -414,6 +421,18 @@ def check_direction_contradiction(claims_a: List[Dict],
 
             # Skip: both witnesses describing their own static positions.
             if ca.get("is_self_location") and cb.get("is_self_location"):
+                continue
+
+            # Do not compare different spatial targets, e.g. a hand and a pocket.
+            if ca.get("context") != cb.get("context"):
+                continue
+
+            # Require evidence that these sentences describe the same event,
+            # subject, or action before reporting a contradiction.
+            if not _is_same_event_time_candidate(
+                ca.get("sentence", ""),
+                cb.get("sentence", ""),
+            ):
                 continue
 
             dir_a = ca["extracted_value"]

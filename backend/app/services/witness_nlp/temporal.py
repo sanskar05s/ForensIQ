@@ -1,183 +1,145 @@
-from typing import Optional
 import re
+from datetime import datetime
+from typing import Optional
 
-# Relative temporal markers mapped to ordering hints
-# Lower number = earlier in sequence
-RELATIVE_MARKERS = {
-    "first": 1,
-    "initially": 1,
-    "to begin with": 1,
-    "at first": 1,
-    "before": 2,
-    "prior to": 2,
-    "earlier": 2,
-    "previously": 2,
-    "then": 5,
-    "next": 5,
-    "after that": 6,
-    "after": 6,
-    "afterwards": 6,
-    "later": 7,
-    "subsequently": 7,
-    "following that": 7,
-    "finally": 9,
-    "eventually": 9,
-    "at last": 9,
-    "meanwhile": 5,
-    "at the same time": 5,
-    "simultaneously": 5,
-    "at that point": 5,
+# Accept only valid clock forms. Do not infer a clock from "evening",
+# "night", ages, dates, or durations.
+_CLOCK_RE = re.compile(
+    r"(?<![\w/.-])"
+    r"(?P<clock>"
+    r"(?:0?[1-9]|1[0-2]):[0-5]\d\s*[ap]\.?m\.?"
+    r"|(?:0?[1-9]|1[0-2])\s*[ap]\.?m\.?"
+    r"|(?:[01]?\d|2[0-3]):[0-5]\d"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_DATE_RE = re.compile(
+    r"\b(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*)?"
+    r"(?P<day>\d{1,2})\s+"
+    r"(?P<month>January|February|March|April|May|June|July|August|September|"
+    r"October|November|December)\s*,?\s*(?P<year>\d{4})\b",
+    re.IGNORECASE,
+)
+
+_NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
 }
 
-_TIME_PATTERNS = [
-    # HH:MM AM/PM
-    (re.compile(r'\b(\d{1,2}):(\d{2})\s*(am|pm)\b', re.I),
-     lambda m: (int(m.group(1)) % 12 + (12 if m.group(3).lower() == 'pm' else 0),
-                int(m.group(2)))),
-    # H AM/PM (no minutes)
-    (re.compile(r'\b(\d{1,2})\s*(am|pm)\b', re.I),
-     lambda m: (int(m.group(1)) % 12 + (12 if m.group(2).lower() == 'pm' else 0),
-                0)),
-    # HH:MM 24-hour
-    (re.compile(r'\b([01]?\d|2[0-3]):([0-5]\d)\b'),
-     lambda m: (int(m.group(1)), int(m.group(2)))),
-]
-
-_WORD_TIMES = {
-    "midnight":   "00:00",
-    "noon":       "12:00",
-    "midday":     "12:00",
-    "morning":    "08:00",
-    "afternoon":  "14:00",
-    "evening":    "19:00",
-    "night":      "21:00",
-}
+_RELATIVE_DURATION_RE = re.compile(
+    r"\b(?P<qualifier>less than|within|about|approximately|around)?\s*"
+    r"(?P<number>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+"
+    r"(?P<unit>seconds?|minutes?|hours?)\s+"
+    r"(?P<relation>later|afterwards?)\b",
+    re.IGNORECASE,
+)
 
 
 def _normalize_time(raw: str) -> Optional[str]:
-    """
-    Converts a raw time string to normalized 24-hour HH:MM format.
-    Returns None if no parseable time found.
-
-    Examples:
-        "8:30 PM"      → "20:30"
-        "9 AM"         → "09:00"
-        "midnight"     → "00:00"
-        "around 9 PM"  → "21:00"
-        "21:15"        → "21:15"
-    """
-    if not raw:
-        return None
-
-    lower = raw.lower().strip()
-
-    # Word-based times
-    for word, normalized in _WORD_TIMES.items():
-        if word in lower:
-            return normalized
-
-    # Regex-based times
-    for pattern, extractor in _TIME_PATTERNS:
-        m = pattern.search(lower)
-        if m:
-            try:
-                h, minute = extractor(m)
-                h = max(0, min(23, h))
-                minute = max(0, min(59, minute))
-                return f"{h:02d}:{minute:02d}"
-            except (ValueError, TypeError):
-                continue
-
+    """Return a validated HH:MM value, or None."""
+    value = re.sub(r"\.", "", (raw or "").strip().upper())
+    for fmt in ("%I:%M %p", "%I:%M%p", "%I %p", "%I%p", "%H:%M"):
+        try:
+            return datetime.strptime(value, fmt).strftime("%H:%M")
+        except ValueError:
+            pass
     return None
 
 
-def _marker_in_text(marker: str, text: str) -> bool:
-    """
-    Uses whole-word regex matching to avoid false substring matches.
-    e.g. 'after' must not match inside 'aftermath' or 'thereafter'.
-    """
-    pattern = rf"\b{re.escape(marker)}\b"
-    return bool(re.search(pattern, text))
+def _incident_date(text: str) -> Optional[str]:
+    match = _DATE_RE.search(text or "")
+    if not match:
+        return None
+    try:
+        parsed = datetime.strptime(
+            f"{match.group('day')} {match.group('month')} {match.group('year')}",
+            "%d %B %Y",
+        )
+        return parsed.date().isoformat()
+    except ValueError:
+        return None
+
+
+def _relative_offset(sentence: str) -> Optional[dict]:
+    match = _RELATIVE_DURATION_RE.search(sentence or "")
+    if not match:
+        return None
+
+    raw_number = match.group("number").lower()
+    amount = int(raw_number) if raw_number.isdigit() else _NUMBER_WORDS[raw_number]
+    unit = match.group("unit").lower()
+    seconds = amount * (3600 if unit.startswith("hour") else
+                        60 if unit.startswith("minute") else 1)
+    qualifier = (match.group("qualifier") or "").lower()
+
+    # Keep uncertainty as bounds. The midpoint is only an ordering hint.
+    if qualifier in {"less than", "within"}:
+        lower, upper = 0, seconds
+    elif qualifier in {"about", "approximately", "around"}:
+        lower, upper = max(0, seconds - 30), seconds + 30
+    else:
+        lower = upper = seconds
+
+    return {
+        "offset_seconds": (lower + upper) // 2,
+        "offset_min_seconds": lower,
+        "offset_max_seconds": upper,
+    }
 
 
 def extract_temporal_sequence(text: str, entities: list) -> list:
-    """
-    Builds a relative event sequence from witness statement text.
-
-    Strategy:
-    1. Split text into sentences
-    2. For each sentence, check for relative temporal markers
-    3. Also check whether the sentence contains a TIME/DATE entity
-    4. Include sentence in sequence if it has either
-    5. Sort by relative_order
-
-    Returns list of:
-    {event_text, relative_order, absolute_time, marker_type, marker_word}
-    """
-    # Build mapping of time entity strings for quick lookup (preserving original casing)
-    time_entity_map = {
-        e["text"].lower(): e["text"] for e in entities if e.get("type") == "TIME"
-    }
-
-    # Split into sentences on . ! ? — preserve non-empty sentences
+    # Intentionally do not use spaCy TIME entities as clock candidates.
+    # The text itself must contain a validated clock or relative event phrase.
     sentences = [
-        s.strip()
-        for s in re.split(r"(?<=[.!?])\s+", text)
-        if s.strip()
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", text or "")
+        if sentence.strip()
     ]
-
+    event_date = _incident_date(text)
     sequence = []
 
-    for i, sentence in enumerate(sentences):
-        lower = sentence.lower()
-        marker_found = None
-        marker_order = i + 10  # default: sentence position after explicit markers
+    for sentence in sentences:
+        clock_matches = list(_CLOCK_RE.finditer(sentence))
 
-        # Check for relative markers using whole-word matching
-        # (longest marker first to avoid partial matches)
-        for marker in sorted(
-            RELATIVE_MARKERS.keys(), key=len, reverse=True
-        ):
-            if _marker_in_text(marker, lower):
-                marker_found = marker
-                marker_order = RELATIVE_MARKERS[marker]
-                break
+        if clock_matches:
+            for match in clock_matches:
+                raw_clock = match.group("clock")
+                normalized = _normalize_time(raw_clock)
+                if not normalized:
+                    continue
 
-        # Check for time entities in this sentence
-        absolute_time = None
-        for time_key, original_time in time_entity_map.items():
-            if time_key in lower:
-                absolute_time = original_time
-                break
+                prefix = sentence[max(0, match.start() - 24):match.start()].lower()
+                approximate = bool(re.search(
+                    r"\b(around|approximately|approx\.?|about|roughly)\s*$",
+                    prefix,
+                ))
 
-        # Fallback check if time pattern exists in sentence
-        if not absolute_time:
-            for pattern, _ in _TIME_PATTERNS:
-                m = pattern.search(sentence)
-                if m:
-                    absolute_time = m.group(0)
-                    break
-            if not absolute_time:
-                for word in _WORD_TIMES:
-                    if _marker_in_text(word, lower):
-                        absolute_time = word
-                        break
-
-        # Only include if temporally relevant
-        if marker_found or absolute_time:
-            normalized = _normalize_time(absolute_time) if absolute_time else None
-            sequence.append(
-                {
+                sequence.append({
                     "event_text": sentence,
-                    "relative_order": marker_order,
-                    "absolute_time": absolute_time,
+                    "relative_order": len(sequence) + 1,
+                    "absolute_time": raw_clock,
                     "absolute_time_normalized": normalized,
-                    "marker_type": "absolute" if absolute_time else "relative",
-                    "marker_word": marker_found,
-                }
-            )
+                    "event_date": event_date,
+                    "marker_type": "absolute",
+                    "marker_word": None,
+                    "temporal_kind": "clock",
+                    "time_precision": "approximate" if approximate else "stated",
+                })
+            continue
 
-    # Sort by relative_order to build the sequence
-    sequence.sort(key=lambda x: x["relative_order"])
+        offset = _relative_offset(sentence)
+        if offset:
+            sequence.append({
+                "event_text": sentence,
+                "relative_order": len(sequence) + 1,
+                "absolute_time": None,
+                "absolute_time_normalized": None,
+                "event_date": event_date,
+                "marker_type": "relative",
+                "marker_word": "later",
+                "temporal_kind": "relative",
+                **offset,
+            })
 
     return sequence

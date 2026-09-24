@@ -1,7 +1,13 @@
+import re
 import spacy
 import logging
 
 logger = logging.getLogger(__name__)
+
+_AGE_ENTITY_RE = re.compile(
+    r"^(?:(?:early|mid|late)[ -]?)?\d{2}s$|^\d{1,2}\s+years?\s+old$",
+    re.IGNORECASE,
+)
 
 _nlp = None
 
@@ -55,6 +61,9 @@ def extract_entities(text: str) -> list:
     for ent in doc.ents:
         entity_type = LABEL_MAP.get(ent.label_)
         if not entity_type:
+            continue
+
+        if entity_type == "TIME" and _AGE_ENTITY_RE.fullmatch(ent.text.strip()):
             continue
 
         key = (ent.text.lower(), entity_type)

@@ -49,8 +49,20 @@ from typing import Dict, List, Optional, Set, Tuple
 import re
 import uuid
 import logging
+from zoneinfo import ZoneInfo
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+_CASE_TZ = ZoneInfo(settings.CASE_TIMEZONE)
+
+
+def _case_timestamp(dt: datetime) -> str:
+    # A witness time without a stated zone is a local wall time for the case.
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=_CASE_TZ)
+    return dt.isoformat()
+
 
 # ── Epoch reference ────────────────────────────────────────────────────────────
 
@@ -148,15 +160,36 @@ def _parse_time(s: str) -> Optional[datetime.time]:
     return None
 
 
-def _infer_case_date(evidence_rows: list) -> date:
+def _infer_case_date(evidence_rows: list, statements: list = None) -> date:
     """
     Infers the incident date. Never returns None.
 
-    Priority 1: EXIF capture timestamps   (most accurate — actual event time)
-    Priority 2: Evidence upload timestamps (practical — fixes timezone issue)
-    Priority 3: Today                      (last resort — time-of-day still correct)
+    Priority 1: Witness stated dates      (from event_date in temporal sequence)
+    Priority 2: EXIF capture timestamps   (most accurate camera time)
+    Priority 3: Evidence upload timestamps (practical fallback)
+    Priority 4: Today                      (last resort — time-of-day still correct)
     """
-    # Priority 1: EXIF capture timestamp (actual camera time)
+    # Priority 1: Witness stated incident date
+    statement_dates = []
+    if statements:
+        for stmt in statements:
+            for entry in (stmt.get("temporal_sequence") or []):
+                if entry.get("temporal_kind") == "date_context":
+                    continue
+                ed = entry.get("event_date")
+                if ed:
+                    try:
+                        d = date.fromisoformat(ed)
+                        if d.year > 2020:
+                            statement_dates.append(d)
+                    except (ValueError, TypeError):
+                        pass
+    if statement_dates:
+        chosen = Counter(statement_dates).most_common(1)[0][0]
+        logger.info(f"case_date from witness statements: {chosen}")
+        return chosen
+
+    # Priority 2: EXIF capture timestamp (actual camera time)
     exif_dates = []
     for ev in evidence_rows:
         exif = ev.get("exif_metadata") or {}
@@ -171,7 +204,7 @@ def _infer_case_date(evidence_rows: list) -> date:
         logger.info(f"case_date from EXIF: {chosen}")
         return chosen
 
-    # Priority 2: Upload timestamps (timezone fix makes this reliable now)
+    # Priority 3: Upload timestamps
     upload_dates = []
     for ev in evidence_rows:
         ts = ev.get("uploaded_at")
@@ -184,7 +217,7 @@ def _infer_case_date(evidence_rows: list) -> date:
         logger.info(f"case_date from upload timestamps: {chosen}")
         return chosen
 
-    # Priority 3: Today — time-of-day ordering remains correct
+    # Priority 4: Today — time-of-day ordering remains correct
     from datetime import date as _date
     today = _date.today()
     logger.warning(
@@ -436,7 +469,7 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
                 claim.lower()[:80] if claim else ""
             )
 
-    case_date = _infer_case_date(evidence_rows)
+    case_date = _infer_case_date(evidence_rows, statements)
 
     events: List[_Event] = []
 
@@ -491,7 +524,13 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
 
     for stmt in statements:
         stmt_claims = conflict_claims.get(stmt["id"], [])
+        stmt_last_sort_score = None
+
         for entry in (stmt.get("temporal_sequence") or []):
+            if entry.get("temporal_kind") == "date_context":
+                continue
+
+            relative_score = None
             raw = entry.get("event_text", "")
             abs_str = entry.get("absolute_time")
             normalized_hhmm = entry.get("absolute_time_normalized")
@@ -541,6 +580,7 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
                 score = _to_score(explicit_dt)
                 if stmt["id"] not in stmt_anchor_times:
                     stmt_anchor_times[stmt["id"]] = score
+                stmt_last_sort_score = score
 
             # Check for range end (e.g. "supervising ... until 1 PM")
             m_range = range_end_re.search(raw)
@@ -550,11 +590,19 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
                     end_dt = datetime.combine(case_date, t_end)
                     stmt_extra_scores.setdefault(stmt["id"], []).append((raw, _to_score(end_dt)))
 
-            # RESTORED: Set timestamp_hard for all events with a resolved datetime.
-            # Previously suppressed to avoid IST timezone shift — now handled in
-            # the frontend by showing only the time portion for witness-direct events.
-            ts_hard = explicit_dt.isoformat() if explicit_dt else None
-            rel, off = _temporal_relation(raw)
+            if entry.get("temporal_kind") == "relative":
+                offset = entry.get("offset_seconds")
+                if isinstance(offset, (int, float)) and stmt_last_sort_score is not None:
+                    relative_score = stmt_last_sort_score + int(offset)
+                    stmt_last_sort_score = relative_score
+
+            ts_hard = _case_timestamp(explicit_dt) if explicit_dt else None
+            if entry.get("temporal_kind") == "relative":
+                rel = "RELATIVE_DURATION"
+                off = int(entry.get("offset_seconds") or 0)
+            else:
+                rel, off = _temporal_relation(raw)
+
             ref_raw = _reference_label(raw)
 
             # Normalise reference through taxonomy
@@ -580,13 +628,30 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
                         is_conflict = True
                         break
 
+            statement_source = {
+                "type": "statement",
+                "id": stmt["id"],
+            }
+            for key in (
+                "temporal_kind",
+                "time_precision",
+                "offset_min_seconds",
+                "offset_max_seconds",
+            ):
+                if key in entry:
+                    statement_source[key] = entry[key]
+
             events.append(_Event(
                 description=f"[{stmt['witness_label']}] {raw[:300]}",
-                source_ids=[{"type": "statement", "id": stmt["id"]}],
+                source_ids=[statement_source],
                 source="witness-direct" if not is_relative else "witness-relative",
                 confidence_state="low-conflict" if is_conflict else "high",
                 explicit_dt=explicit_dt,
-                sort_score=_to_score(explicit_dt) if explicit_dt else None,
+                sort_score=(
+                    _to_score(explicit_dt)
+                    if explicit_dt
+                    else relative_score
+                ),
                 timestamp_hard=ts_hard,
                 reference_label=canon_ref,
                 relation=rel,
@@ -630,11 +695,7 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
         result = _anchor(ev, abs_pool, anchor_idx, default_anchor)
         if result is not None:
             ev.sort_score = result
-            ev.timestamp_hard = _score_to_timestamp(result)   # Fix 2
-            if ev.timestamp_hard:
-                # Promote source label so frontend knows this is inferred,
-                # not just placed by relative order.
-                ev.source = "witness-relative"
+            ev.source = "witness-relative"
             # Add to anchor_idx so Pass B downstream can use this result
             for label in ev.event_types:
                 anchor_idx.setdefault(label, []).append(result)
@@ -651,9 +712,7 @@ def build_timeline(case_id: str, supabase) -> List[Dict]:
         result = _anchor(ev, ext_pool, anchor_idx, default_anchor)
         if result is not None:
             ev.sort_score = result
-            ev.timestamp_hard = _score_to_timestamp(result)   # Fix 2
-            if ev.timestamp_hard:
-                ev.source = "witness-relative"
+            ev.source = "witness-relative"
 
     # ── Phase 4: Sort and output ───────────────────────────────────────────────
     # Evidence with EXIF capture time → treat as incident events (interleaved)

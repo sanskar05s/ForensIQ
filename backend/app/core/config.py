@@ -12,5 +12,7 @@ class Settings:
     ACCESS_TOKEN_EXPIRE_MINUTES = int(
         os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30)
     )
+    CASE_TIMEZONE = os.getenv("CASE_TIMEZONE", "Asia/Kolkata")
 
 settings = Settings()
+CASE_TIMEZONE = settings.CASE_TIMEZONE

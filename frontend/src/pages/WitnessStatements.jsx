@@ -20,7 +20,6 @@ import Button from "../components/ui/Button";
 import Spinner from "../components/loading/Spinner";
 import SkeletonCard from "../components/loading/SkeletonCard";
 import { apiClient } from "../api/client";
-import { supabase } from "../supabase/client";
 import { relativeTime } from "../utils/relativeTime";
 
 /* ─── Queue item statuses (reused from Evidence module pattern) ─── */
@@ -172,9 +171,6 @@ export default function WitnessStatements() {
   const [formError, setFormError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
-  /* Evidence dropdown */
-  const [evidenceList, setEvidenceList] = useState([]);
-
   /* Statements list */
   const [statements, setStatements] = useState([]);
   const [listLoading, setListLoading] = useState(true);
@@ -187,12 +183,7 @@ export default function WitnessStatements() {
     persistQueue(caseId, queue);
   }, [caseId, queue]);
 
-  useEffect(() => {
-    fetchStatements();
-    fetchEvidence();
-  }, [caseId]);
-
-  async function fetchStatements() {
+  const fetchStatements = useCallback(async () => {
     setListLoading(true);
     try {
       const res = await apiClient(`/witness/cases/${caseId}/statements`);
@@ -202,20 +193,24 @@ export default function WitnessStatements() {
     } finally {
       setListLoading(false);
     }
-  }
+  }, [caseId]);
 
-  async function fetchEvidence() {
-    try {
-      const { data } = await supabase
-        .from("evidence")
-        .select("id, filename, uploaded_at")
-        .eq("case_id", caseId)
-        .order("uploaded_at", { ascending: false });
-      setEvidenceList(data || []);
-    } catch {
-      setEvidenceList([]);
-    }
-  }
+  useEffect(() => {
+    let active = true;
+    apiClient(`/witness/cases/${caseId}/statements`)
+      .then((res) => {
+        if (active) setStatements(res.statements || []);
+      })
+      .catch(() => {
+        if (active) setStatements([]);
+      })
+      .finally(() => {
+        if (active) setListLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [caseId]);
 
   /* ── Sequential Queue processing engine (B2) ── */
   const processQueueSequential = useCallback(async () => {
@@ -288,7 +283,7 @@ export default function WitnessStatements() {
       setIsProcessing(false);
       fetchStatements();
     }
-  }, [caseId]);
+  }, [caseId, fetchStatements]);
 
   async function handleProcessAllPending() {
     processQueueSequential();
@@ -1998,4 +1993,3 @@ export default function WitnessStatements() {
     </AppShell>
   );
 }
-

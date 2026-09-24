@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
 import AppShell from '../components/layout/AppShell';
@@ -9,12 +9,13 @@ export default function LeadGenerator() {
   const { caseId } = useParams();
   const navigate = useNavigate();
   
-  const [loading, setLoading] = useState(true);
+  const [loadedCaseId, setLoadedCaseId] = useState(null);
+  const loading = loadedCaseId !== caseId;
   const [data, setData] = useState({ summary: '', leads: [] });
   const [error, setError] = useState(null);
 
-  const generateLeads = async () => {
-    setLoading(true);
+  const generateLeads = useCallback(async () => {
+    setLoadedCaseId(null);
     setError(null);
     try {
       const response = await apiClient(`/leads/cases/${caseId}/generate`, { method: 'POST' });
@@ -23,12 +24,29 @@ export default function LeadGenerator() {
       console.error('Failed to generate leads:', err);
       setError('Failed to generate investigation leads. Please try again.');
     } finally {
-      setLoading(false);
+      setLoadedCaseId(caseId);
     }
-  };
+  }, [caseId]);
 
   useEffect(() => {
-    generateLeads();
+    let active = true;
+    apiClient(`/leads/cases/${caseId}/generate`, { method: 'POST' })
+      .then((response) => {
+        if (!active) return;
+        setData(response || { summary: '', leads: [] });
+        setError(null);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error('Failed to generate leads:', err);
+        setError('Failed to generate investigation leads. Please try again.');
+      })
+      .finally(() => {
+        if (active) setLoadedCaseId(caseId);
+      });
+    return () => {
+      active = false;
+    };
   }, [caseId]);
 
   const getPriorityColor = (priority) => {

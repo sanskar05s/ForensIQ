@@ -18,7 +18,7 @@ export default function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
 
-    const { data, error } = await signIn(email, password);
+    const { error } = await signIn(email, password);
 
     if (error) {
       alert(error.message);
