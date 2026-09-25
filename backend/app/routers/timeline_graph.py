@@ -27,7 +27,8 @@ logger = logging.getLogger(__name__)
 def build_case_timeline(case_id: str):
     """
     Rebuilds the timeline from scratch using all current case data.
-    Clears existing timeline events and inserts fresh ones.
+    Builds and inserts replacement events before removing the current events,
+    so a build or insert failure does not erase the existing timeline.
     Updates build_state.last_timeline_build.
     """
     supabase = get_supabase_client()
@@ -42,24 +43,75 @@ def build_case_timeline(case_id: str):
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
-    # Clear existing timeline events for this case
-    supabase.table("timeline_events")\
-        .delete()\
+    # Record the current event IDs first. Do not delete anything until the new
+    # timeline has been built and the database confirms all replacement rows.
+    old_events = supabase.table("timeline_events")\
+        .select("id")\
         .eq("case_id", case_id)\
-        .execute()
+        .execute().data or []
+    old_ids = [event["id"] for event in old_events if event.get("id")]
 
     # Build new timeline
     events = build_timeline(case_id, supabase)
 
     if not events:
-        return {
-            "success": True,
-            "message": "No events found to build timeline",
-            "event_count": 0
-        }
+        raise HTTPException(
+            status_code=422,
+            detail="Timeline rebuild produced no events; existing timeline was preserved.",
+        )
 
-    # Batch insert (Supabase supports list insert)
-    supabase.table("timeline_events").insert(events).execute()
+    # Batch insert and request returned IDs so partial/empty responses are not
+    # mistaken for a successful replacement.
+    insert_result = supabase.table("timeline_events")\
+        .insert(events)\
+        .select("id")\
+        .execute()
+    inserted_ids = [
+        event["id"] for event in (insert_result.data or []) if event.get("id")
+    ]
+
+    if len(inserted_ids) != len(events):
+        # The old rows are still untouched. Remove any rows returned by a
+        # partial insert response, then report a controlled failure.
+        if inserted_ids:
+            try:
+                supabase.table("timeline_events")\
+                    .delete()\
+                    .eq("case_id", case_id)\
+                    .in_("id", inserted_ids)\
+                    .execute()
+            except Exception:
+                logger.exception("Failed to clean up incomplete timeline insert for case %s", case_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Timeline replacement could not be verified; existing timeline was preserved.",
+        )
+
+    # The replacement is confirmed. Remove only the IDs captured before the
+    # insert, scoped to this case, so the new rows are not included in cleanup.
+    if old_ids:
+        try:
+            supabase.table("timeline_events")\
+                .delete()\
+                .eq("case_id", case_id)\
+                .in_("id", old_ids)\
+                .execute()
+        except Exception as exc:
+            # Best-effort rollback of the new rows leaves the previous timeline
+            # available if removal of the old rows fails.
+            try:
+                supabase.table("timeline_events")\
+                    .delete()\
+                    .eq("case_id", case_id)\
+                    .in_("id", inserted_ids)\
+                    .execute()
+            except Exception:
+                logger.exception("Failed to roll back replacement timeline for case %s", case_id)
+            logger.exception("Failed to remove old timeline events for case %s", case_id)
+            raise HTTPException(
+                status_code=500,
+                detail="Timeline replacement failed while removing old events; please retry.",
+            ) from exc
 
     # Update build_state
     build_state = case.get("build_state") or {}
