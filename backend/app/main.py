@@ -16,7 +16,7 @@ from app.routers import contradiction
 from app.routers import timeline_graph
 from app.routers.activity_log import router as activity_log_router
 
-from app.routers import assistant, activity_log
+from app.routers import assistant
 
 from app.routers import report
 
@@ -114,7 +114,6 @@ app.include_router(
 
 app.include_router(activity_log_router, prefix="/api")
 app.include_router(assistant.router, prefix="/api")
-app.include_router(activity_log.router, prefix="/api")
 
 app.include_router(report.router, prefix="/api")
 
