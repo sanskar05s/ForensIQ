@@ -168,7 +168,12 @@ export default function EvidencePage() {
   const navigate = useNavigate();
   const inputRef = useRef(null);
 
-  const { evidence, loading: evidenceLoading, refresh } = useEvidence(caseId);
+  const {
+    evidence,
+    loading: evidenceLoading,
+    error: evidenceError,
+    refresh,
+  } = useEvidence(caseId);
 
   // Queue of files selected for upload
   const [queue, setQueue] = useState(() => readPersistedQueue(caseId));
@@ -673,6 +678,44 @@ export default function EvidencePage() {
           Existing Evidence
         </h2>
 
+        {!evidenceLoading && evidenceError && (
+          <div
+            role="alert"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "12px",
+              marginBottom: "16px",
+              padding: "12px 16px",
+              border: "1px solid color-mix(in srgb, var(--danger) 35%, transparent)",
+              borderRadius: "10px",
+              background: "color-mix(in srgb, var(--danger) 8%, transparent)",
+              color: "var(--danger)",
+              fontSize: "13px",
+            }}
+          >
+            <span>
+              Failed to load evidence: {evidenceError.message || String(evidenceError)}
+            </span>
+            <button
+              type="button"
+              onClick={() => refresh({ showLoading: true })}
+              style={{
+                flexShrink: 0,
+                border: "none",
+                background: "none",
+                color: "inherit",
+                cursor: "pointer",
+                font: "inherit",
+                textDecoration: "underline",
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         {evidenceLoading ? (
           <div
             style={{
@@ -685,7 +728,7 @@ export default function EvidencePage() {
             <SkeletonCard />
             <SkeletonCard />
           </div>
-        ) : evidence.length === 0 ? (
+        ) : evidence.length === 0 && evidenceError ? null : evidence.length === 0 ? (
           <div
             style={{
               padding: "32px",
