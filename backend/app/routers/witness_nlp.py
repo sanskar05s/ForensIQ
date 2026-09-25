@@ -31,7 +31,10 @@ class WitnessStatementRequest(BaseModel):
 
 
 @router.post("/cases/{case_id}/statements")
-async def create_statement(case_id: str, body: WitnessStatementRequest):
+def create_statement(
+    case_id: str,
+    body: WitnessStatementRequest,
+):
     """
     Accepts a witness statement, runs NLP analysis pipeline,
     stores results in witness_statements table.
@@ -136,11 +139,25 @@ async def create_statement(case_id: str, body: WitnessStatementRequest):
         metadata={"statement_id": statement_id, "witness_label": witness_label, "entity_count": len(entities)},
     )
 
-    # Auto-trigger incremental contradiction check (non-fatal)
+    # Keep one statement's case-wide checks inside its sequential queue turn.
+    # This sync route runs in FastAPI's worker pool, leaving the ASGI event loop
+    # available to serve unrelated modules during model and database work.
+    _refresh_case_contradictions(case_id, statement_id)
+
+    return {
+        "success": True,
+        "statement_id": statement_id,
+        "entity_count": len(entities),
+        "temporal_events": len(temporal_seq),
+        "hedge_markers": hedge_result["hedge_marker_count"],
+        "high_uncertainty": hedge_result["high_uncertainty"],
+        "xai_summary": xai_summary,
+    }
+
+
+def _refresh_case_contradictions(case_id: str, statement_id: str):
     try:
         from app.services.contradiction.rule_based import run_tier1
-        from app.services.contradiction.nli_escalation import run_tier2
-        from app.services.contradiction.candidate_filter import should_compare_nli
 
         supabase_client = get_supabase_client()
         case = supabase_client.table("cases")\
@@ -162,15 +179,6 @@ async def create_statement(case_id: str, body: WitnessStatementRequest):
                     for c in tier1:
                         c["case_id"] = case_id
                     new_contradictions.extend(tier1)
-                elif should_compare_nli(new_stmt, existing_stmt):
-                    try:
-                        tier2 = run_tier2(new_stmt, existing_stmt)
-                        for c in tier2:
-                            c["case_id"] = case_id
-                        new_contradictions.extend(tier2)
-                    except Exception:
-                        pass
-
         # Deduplicate before inserting
         existing_fingerprints = set()
         existing_c = supabase_client.table("contradictions")\
@@ -211,41 +219,13 @@ async def create_statement(case_id: str, body: WitnessStatementRequest):
     except Exception as e:
         logger.warning(f"Auto contradiction check failed (non-fatal): {e}")
 
-    # Auto-trigger knowledge graph rebuild (non-fatal)
-    try:
-        from app.services.timeline_graph.graph_builder import build_graph
-        from app.services.timeline_graph.sna_metrics import (
-            compute_sna_metrics, enrich_nodes_with_sna, get_public_metrics
-        )
-        supabase_client = get_supabase_client()
-        G, nodes, edges = build_graph(case_id, supabase_client,
-                                       use_gemini_relationships=False)
-        if nodes:
-            sna = compute_sna_metrics(G)
-            nodes = enrich_nodes_with_sna(nodes, sna)
-            public_sna = get_public_metrics(sna, node_count=len(nodes), edge_count=len(edges))
-            supabase_client.table("knowledge_graphs").upsert({
-                "case_id": case_id,
-                "nodes": nodes,
-                "edges": edges,
-                "sna_metrics": public_sna,
-            }, on_conflict="case_id").execute()
-    except Exception as e:
-        logger.warning(f"Auto graph rebuild failed (non-fatal): {e}")
-
-    return {
-        "success": True,
-        "statement_id": statement_id,
-        "entity_count": len(entities),
-        "temporal_events": len(temporal_seq),
-        "hedge_markers": hedge_result["hedge_marker_count"],
-        "high_uncertainty": hedge_result["high_uncertainty"],
-        "xai_summary": xai_summary,
-    }
+    # Graph freshness is tracked by /graph/cases/{case_id}/staleness. The graph
+    # is intentionally rebuilt only when requested, avoiding a full-case graph
+    # and SNA rebuild for every statement in a batch.
 
 
 @router.get("/cases/{case_id}/statements")
-async def list_statements(case_id: str):
+def list_statements(case_id: str):
     """Returns all witness statements for a case, oldest first."""
     supabase = get_supabase_client()
     result = (
@@ -259,7 +239,7 @@ async def list_statements(case_id: str):
 
 
 @router.get("/cases/{case_id}/statements/{statement_id}")
-async def get_statement(case_id: str, statement_id: str):
+def get_statement(case_id: str, statement_id: str):
     """Returns a single witness statement with full NLP results."""
     supabase = get_supabase_client()
     result = (
@@ -275,7 +255,7 @@ async def get_statement(case_id: str, statement_id: str):
 
 
 @router.delete("/cases/{case_id}/statements/{statement_id}")
-async def delete_statement(case_id: str, statement_id: str):
+def delete_statement(case_id: str, statement_id: str):
     """Deletes a witness statement and decrements the case witness_count."""
     supabase = get_supabase_client()
     result = (
@@ -302,7 +282,7 @@ async def delete_statement(case_id: str, statement_id: str):
 
 
 @router.post("/cases/{case_id}/parse-document")
-async def parse_document(case_id: str, file: UploadFile = File(...)):
+def parse_document(case_id: str, file: UploadFile = File(...)):
     """
     Accepts an uploaded document (PDF, DOCX, DOC, TXT), extracts full text,
     and deterministically splits it into individual witness statements.
@@ -321,7 +301,7 @@ async def parse_document(case_id: str, file: UploadFile = File(...)):
     tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            content = await file.read()
+            content = file.file.read()
             tmp.write(content)
             tmp_path = tmp.name
 
@@ -355,7 +335,7 @@ async def parse_document(case_id: str, file: UploadFile = File(...)):
 
 
 @router.post("/cases/{case_id}/extract-text")
-async def extract_single_text(case_id: str, file: UploadFile = File(...)):
+def extract_single_text(case_id: str, file: UploadFile = File(...)):
     """
     Accepts an uploaded document representing a single witness (PDF, DOCX, DOC, TXT),
     extracts the complete text, and extracts/suggests statement and witness name.
@@ -374,7 +354,7 @@ async def extract_single_text(case_id: str, file: UploadFile = File(...)):
     tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            content = await file.read()
+            content = file.file.read()
             tmp.write(content)
             tmp_path = tmp.name
 
@@ -406,7 +386,7 @@ class ParseTextRequest(BaseModel):
 
 
 @router.post("/cases/{case_id}/parse-text")
-async def parse_text_endpoint(case_id: str, body: ParseTextRequest):
+def parse_text_endpoint(case_id: str, body: ParseTextRequest):
     """
     Accepts pasted text containing multiple witness statements,
     and deterministically splits it using parse_multi_witness_document.

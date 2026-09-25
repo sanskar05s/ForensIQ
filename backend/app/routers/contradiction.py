@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/contradiction/cases/{case_id}/run")
-async def run_contradiction_check(case_id: str):
+def run_contradiction_check(case_id: str):
     """
     Incremental contradiction detection.
     Only processes witness statements added since last run.
@@ -200,7 +200,7 @@ async def run_contradiction_check(case_id: str):
 
 
 @router.get("/contradiction/cases/{case_id}")
-async def list_contradictions(case_id: str,
+def list_contradictions(case_id: str,
                               include_dismissed: bool = False):
     """
     Returns contradictions for a case.
@@ -243,7 +243,7 @@ async def list_contradictions(case_id: str,
 
 
 @router.get("/contradiction/cases/{case_id}/staleness")
-async def check_staleness(case_id: str):
+def check_staleness(case_id: str):
     """
     Returns whether new statements have been added since the last
     contradiction run. Used by the frontend stale banner.
@@ -281,7 +281,7 @@ async def check_staleness(case_id: str):
 
 
 @router.delete("/contradiction/cases/{case_id}/{contradiction_id}")
-async def dismiss_contradiction(case_id: str, contradiction_id: str):
+def dismiss_contradiction(case_id: str, contradiction_id: str):
     """
     Soft-dismisses a contradiction by setting is_dismissed = TRUE.
     Does NOT delete the row — preserves deduplication fingerprint
@@ -312,7 +312,7 @@ VALID_STATUSES = {
 
 
 @router.patch("/contradiction/cases/{case_id}/{contradiction_id}/resolve")
-async def resolve_contradiction(
+def resolve_contradiction(
     case_id: str,
     contradiction_id: str,
     body: ResolutionRequest,

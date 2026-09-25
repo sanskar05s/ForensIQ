@@ -41,7 +41,7 @@ class IdentificationRequest(BaseModel):
 
 
 @router.post("/identification/cases/{case_id}/evidence/{evidence_id}")
-async def add_identification(
+def add_identification(
     case_id: str,
     evidence_id: str,
     body: IdentificationRequest,
@@ -130,7 +130,7 @@ async def add_identification(
 
 
 @router.get("/identification/cases/{case_id}/evidence/{evidence_id}")
-async def get_identifications(case_id: str, evidence_id: str):
+def get_identifications(case_id: str, evidence_id: str):
     """Returns all human identifications for a given evidence item."""
     supabase = get_supabase_client()
     result = supabase.table("detection_identifications")\
@@ -143,7 +143,7 @@ async def get_identifications(case_id: str, evidence_id: str):
 
 
 @router.delete("/identification/cases/{case_id}/evidence/{evidence_id}/{identification_id}")
-async def delete_identification(
+def delete_identification(
     case_id: str,
     evidence_id: str,
     identification_id: str,
@@ -162,7 +162,7 @@ async def delete_identification(
 # ── Detection Crop ─────────────────────────────────────────────────────────────
 
 @router.get("/identification/cases/{case_id}/evidence/{evidence_id}/crop/{detection_index}")
-async def get_detection_crop(
+def get_detection_crop(
     case_id: str,
     evidence_id: str,
     detection_index: int,
@@ -279,7 +279,7 @@ async def get_detection_crop(
 # ── Full image with overlay metadata ──────────────────────────────────────────
 
 @router.get("/identification/cases/{case_id}/evidence/{evidence_id}/overlay-data")
-async def get_overlay_data(case_id: str, evidence_id: str):
+def get_overlay_data(case_id: str, evidence_id: str):
     """
     Returns detection data formatted for SVG overlay rendering.
     Frontend uses this to draw bounding boxes over the full image.

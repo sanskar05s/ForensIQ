@@ -6,14 +6,14 @@ router = APIRouter()
 
 
 @router.post("/claims/cases/{case_id}/build")
-async def build_links(case_id: str):
+def build_links(case_id: str):
     supabase = get_supabase_client()
     links = build_claim_links(case_id, supabase)
     return {"links_created": len(links)}
 
 
 @router.get("/claims/cases/{case_id}/evidence/{evidence_id}")
-async def get_evidence_claims(case_id: str, evidence_id: str):
+def get_evidence_claims(case_id: str, evidence_id: str):
     supabase = get_supabase_client()
     result = supabase.table("evidence_claim_links")\
         .select("*, statement:statement_id(witness_label)")\
@@ -23,7 +23,7 @@ async def get_evidence_claims(case_id: str, evidence_id: str):
 
 
 @router.get("/claims/cases/{case_id}/statement/{statement_id}")
-async def get_statement_evidence(case_id: str, statement_id: str):
+def get_statement_evidence(case_id: str, statement_id: str):
     supabase = get_supabase_client()
     result = supabase.table("evidence_claim_links")\
         .select("*, evidence:evidence_id(filename, type)")\

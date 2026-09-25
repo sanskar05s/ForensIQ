@@ -17,7 +17,7 @@ class UpdateRequest(BaseModel):
 
 
 @router.post("/assistant/cases/{case_id}/query")
-async def query(case_id: str, body: AssistantQueryRequest):
+def query(case_id: str, body: AssistantQueryRequest):
     """Answers an investigator query using structured case data."""
     query_text = body.query.strip()
     if not query_text:
@@ -31,7 +31,7 @@ async def query(case_id: str, body: AssistantQueryRequest):
 
 
 @router.post("/assistant/cases/{case_id}/update")
-async def get_investigation_update(case_id: str, body: UpdateRequest):
+def get_investigation_update(case_id: str, body: UpdateRequest):
     """
     Generates a brief AI update paragraph after a module rebuild.
     Called by the frontend immediately after a successful rebuild.
@@ -45,7 +45,7 @@ async def get_investigation_update(case_id: str, body: UpdateRequest):
 
 
 @router.get("/assistant/cases/{case_id}/history")
-async def get_history(case_id: str):
+def get_history(case_id: str):
     """Returns past assistant interactions for this case, oldest first."""
     supabase = get_supabase_client()
     result = supabase.table("assistant_interactions")\

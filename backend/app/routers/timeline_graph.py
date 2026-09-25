@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # ─── TIMELINE ─────────────────────────────────────────────────────────
 
 @timeline_router.post("/timeline/cases/{case_id}/build")
-async def build_case_timeline(case_id: str):
+def build_case_timeline(case_id: str):
     """
     Rebuilds the timeline from scratch using all current case data.
     Clears existing timeline events and inserts fresh ones.
@@ -89,7 +89,7 @@ async def build_case_timeline(case_id: str):
 
 
 @timeline_router.get("/timeline/cases/{case_id}")
-async def get_timeline(case_id: str):
+def get_timeline(case_id: str):
     """
     Returns all timeline events in investigation order.
     Primary sort: timestamp_hard ascending (NULLS LAST — hard timestamps first).
@@ -113,7 +113,7 @@ async def get_timeline(case_id: str):
 
 
 @timeline_router.get("/timeline/cases/{case_id}/staleness")
-async def timeline_staleness(case_id: str):
+def timeline_staleness(case_id: str):
     """
     Returns whether new evidence or statements exist
     since the last timeline build.
@@ -159,7 +159,7 @@ async def timeline_staleness(case_id: str):
 # ─── KNOWLEDGE GRAPH ───────────────────────────────────────────────────
 
 @graph_router.post("/graph/cases/{case_id}/build")
-async def build_case_graph(case_id: str):
+def build_case_graph(case_id: str):
     """
     Builds or rebuilds the knowledge graph with SNA metrics.
     Upserts the knowledge_graphs row for this case.
@@ -233,7 +233,7 @@ async def build_case_graph(case_id: str):
 
 
 @graph_router.get("/graph/cases/{case_id}")
-async def get_graph(case_id: str):
+def get_graph(case_id: str):
     """Returns the knowledge graph with nodes, edges, and SNA metrics."""
     supabase = get_supabase_client()
     result = supabase.table("knowledge_graphs")\
@@ -252,7 +252,7 @@ async def get_graph(case_id: str):
 
 
 @graph_router.get("/graph/cases/{case_id}/staleness")
-async def graph_staleness(case_id: str):
+def graph_staleness(case_id: str):
     """Returns whether new statements exist since the last graph build."""
     supabase = get_supabase_client()
     case = supabase.table("cases")\
@@ -282,7 +282,7 @@ async def graph_staleness(case_id: str):
 
 
 @graph_router.get("/graph/cases/{case_id}/entity-intelligence/{entity_label}")
-async def get_entity_intelligence(case_id: str, entity_label: str):
+def get_entity_intelligence(case_id: str, entity_label: str):
     """
     Cross-module intelligence summary for a named entity.
     Aggregates data from: witness_statements, detection_identifications,

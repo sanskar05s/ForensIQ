@@ -202,7 +202,7 @@ def get_signed_url(case_id: str, evidence_id: str):
 
 
 @router.get("/cases/{case_id}/audit")
-async def get_blockchain_audit(case_id: str):
+def get_blockchain_audit(case_id: str):
     """
     Returns all evidence items for a case with their blockchain status.
     Used by the frontend Blockchain Audit page.

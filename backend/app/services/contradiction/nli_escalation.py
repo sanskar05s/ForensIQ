@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 from typing import List, Dict, Optional
 import logging
+from threading import Lock
 
 logger = logging.getLogger(__name__)
 
@@ -11,16 +12,20 @@ CONFIDENCE_THRESHOLD = 0.70
 
 _model = None
 _tokenizer = None
+_model_lock = Lock()
+_inference_lock = Lock()
 
 
 def get_model():
     global _model, _tokenizer
     if _model is None:
-        logger.info(f"Loading NLI model: {MODEL_NAME}")
-        _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-        _model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
-        _model.eval()
-        logger.info("NLI model loaded successfully")
+        with _model_lock:
+            if _model is None:
+                logger.info(f"Loading NLI model: {MODEL_NAME}")
+                _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+                _model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+                _model.eval()
+                logger.info("NLI model loaded successfully")
     return _model, _tokenizer
 
 
@@ -40,7 +45,7 @@ def predict_nli(premise: str, hypothesis: str) -> Dict:
         padding=True
     )
 
-    with torch.no_grad():
+    with _inference_lock, torch.no_grad():
         outputs = model(**inputs)
 
     probs = F.softmax(outputs.logits, dim=-1)

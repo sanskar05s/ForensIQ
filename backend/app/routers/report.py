@@ -6,7 +6,7 @@ router = APIRouter()
 
 
 @router.post("/report/cases/{case_id}/generate")
-async def trigger_report(case_id: str, background_tasks: BackgroundTasks):
+def trigger_report(case_id: str, background_tasks: BackgroundTasks):
     """
     Triggers PDF report generation.
     Runs synchronously (may take 20-40 seconds for full generation).
@@ -32,7 +32,7 @@ async def trigger_report(case_id: str, background_tasks: BackgroundTasks):
 
 
 @router.get("/report/cases/{case_id}")
-async def get_report(case_id: str):
+def get_report(case_id: str):
     """Returns current report status and metadata."""
     supabase = get_supabase_client()
     result = supabase.table("reports").select("*")\
@@ -43,7 +43,7 @@ async def get_report(case_id: str):
 
 
 @router.get("/report/cases/{case_id}/download")
-async def download_report(case_id: str):
+def download_report(case_id: str):
     """Returns a signed download URL for the report PDF (1 hour expiry)."""
     supabase = get_supabase_client()
     result = supabase.table("reports").select("storage_path, status")\

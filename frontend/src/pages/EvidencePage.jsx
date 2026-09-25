@@ -79,7 +79,8 @@ const FILE_STATUS = {
   FAILED: "failed",
 };
 
-function statusLabel(status) {
+function statusLabel(status, hasFile = true) {
+  if (!hasFile) return "Queue interrupted · check saved evidence";
   switch (status) {
     case FILE_STATUS.PENDING:
       return "Selected";
@@ -171,9 +172,38 @@ export default function EvidencePage() {
 
   // Queue of files selected for upload
   const [queue, setQueue] = useState(() => readPersistedQueue(caseId));
+  const queueRef = useRef(queue);
   const [dragging, setDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [globalError, setGlobalError] = useState("");
+
+  useEffect(() => {
+    queueRef.current = queue;
+  }, [queue]);
+
+  useEffect(() => {
+    const syncQueue = (event) => {
+      if (event.detail?.caseId !== caseId) return;
+      queueRef.current = event.detail.queue;
+      setQueue(event.detail.queue);
+    };
+    window.addEventListener("forensiq:evidence-queue", syncQueue);
+    return () => window.removeEventListener("forensiq:evidence-queue", syncQueue);
+  }, [caseId]);
+
+  function updateQueuedFile(itemId, changes) {
+    const updated = queueRef.current.map((item) =>
+      item.id === itemId ? { ...item, ...changes } : item,
+    );
+    queueRef.current = updated;
+    setQueue(updated);
+    persistQueue(caseId, updated);
+    window.dispatchEvent(
+      new CustomEvent("forensiq:evidence-queue", {
+        detail: { caseId, queue: updated },
+      }),
+    );
+  }
 
   useEffect(() => {
     if (!caseId) return;
@@ -265,6 +295,9 @@ export default function EvidencePage() {
         file_hash: fileHash,
       });
 
+      // Show the saved record immediately; analysis can take much longer.
+      void refresh();
+
       // Step 4: Trigger analysis (best-effort)
       const evidenceType = detectType(file);
       if (evidenceType === "image") {
@@ -305,6 +338,7 @@ export default function EvidencePage() {
 
       // Done
       updateItem(FILE_STATUS.SUCCESS);
+      await refresh();
     } catch (err) {
       updateItem(FILE_STATUS.FAILED, parseSupabaseError(err));
     }
@@ -319,21 +353,21 @@ export default function EvidencePage() {
     setIsUploading(true);
     setGlobalError("");
 
-    // Process files sequentially to avoid overwhelming the backend
-    for (const item of pendingItems) {
-      const updateItem = (status, error) => {
-        setQueue((prev) =>
-          prev.map((q) =>
-            q.id === item.id ? { ...q, status, error: error || q.error } : q,
-          ),
-        );
-      };
-      await uploadSingleFile(item, updateItem);
+    try {
+      // Keep heavyweight model work sequential, while each item remains visible.
+      for (const item of pendingItems) {
+        const updateItem = (status, error) => {
+          updateQueuedFile(item.id, {
+            status,
+            error: error || item.error || "",
+          });
+        };
+        await uploadSingleFile(item, updateItem);
+      }
+    } finally {
+      setIsUploading(false);
+      await refresh();
     }
-
-    setIsUploading(false);
-    // Refresh evidence list to show new uploads
-    refresh();
   }
 
   const pendingCount = queue.filter(
@@ -540,14 +574,14 @@ export default function EvidencePage() {
                     <CheckCircle size={14} />
                   )}
                   {item.status === FILE_STATUS.FAILED && <XCircle size={14} />}
-                  {![
+                  {item.file && ![
                     FILE_STATUS.PENDING,
                     FILE_STATUS.SUCCESS,
                     FILE_STATUS.FAILED,
                   ].includes(item.status) && (
                     <Loader size={14} className="spin" />
                   )}
-                  <span>{statusLabel(item.status)}</span>
+                  <span>{statusLabel(item.status, Boolean(item.file))}</span>
                 </div>
 
                 {/* Error message */}
@@ -569,7 +603,8 @@ export default function EvidencePage() {
 
                 {/* Remove button (only for pending/failed) */}
                 {(item.status === FILE_STATUS.PENDING ||
-                  item.status === FILE_STATUS.FAILED) && (
+                  item.status === FILE_STATUS.FAILED ||
+                  !item.file) && (
                   <button
                     onClick={() => removeFromQueue(item.id)}
                     style={{

@@ -13,7 +13,7 @@ class HypothesisRequest(BaseModel):
 
 
 @router.post("/hypotheses/cases/{case_id}")
-async def create_hypothesis(case_id: str, body: HypothesisRequest):
+def create_hypothesis(case_id: str, body: HypothesisRequest):
     hyp_title = (body.title or body.description or "").strip()
     hyp_desc = (body.description or body.title or "").strip()
     if not hyp_title:
@@ -41,7 +41,7 @@ async def create_hypothesis(case_id: str, body: HypothesisRequest):
 
 
 @router.get("/hypotheses/cases/{case_id}")
-async def list_hypotheses(case_id: str):
+def list_hypotheses(case_id: str):
     supabase = get_supabase_client()
     result = supabase.table("hypotheses")\
         .select("*").eq("case_id", case_id)\
@@ -50,7 +50,7 @@ async def list_hypotheses(case_id: str):
 
 
 @router.delete("/hypotheses/cases/{case_id}/{hypothesis_id}")
-async def delete_hypothesis(case_id: str, hypothesis_id: str):
+def delete_hypothesis(case_id: str, hypothesis_id: str):
     supabase = get_supabase_client()
     supabase.table("hypotheses")\
         .delete().eq("id", hypothesis_id).eq("case_id", case_id).execute()

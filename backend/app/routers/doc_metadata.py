@@ -15,7 +15,7 @@ router = APIRouter(
 
 
 @router.post("/cases/{case_id}/evidence/{evidence_id}/extract-document")
-async def extract_document(case_id: str, evidence_id: str):
+def extract_document(case_id: str, evidence_id: str):
     """
     Downloads document from Supabase Storage.
     Runs text extraction, metadata extraction, and integrity check.

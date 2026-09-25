@@ -1,16 +1,21 @@
 import torch
 from ultralytics import YOLO
 from app.services.xai_formatter import build_analysis
+from threading import Lock
 
 # Load model once at module level (cached)
 _model = None
+_model_lock = Lock()
+_inference_lock = Lock()
 
 
 def get_model():
     global _model
 
     if _model is None:
-        _model = YOLO("yolov8n.pt")  # downloads automatically on first run
+        with _model_lock:
+            if _model is None:
+                _model = YOLO("yolov8n.pt")  # downloads automatically on first run
 
     return _model
 
@@ -27,15 +32,16 @@ def detect_objects(image_path: str, threshold: float = 0.40) -> list:
     model = get_model()
     device = 0 if torch.cuda.is_available() else "cpu"
 
-    results = model(
-        image_path,
-        device=device,
-        conf=threshold,     # 0.40 — forensic recall optimized
-        imgsz=1280,         # was 640 — preserves fine detail
-        iou=0.45,           # slightly permissive NMS for dense scenes
-        max_det=300,        # was default 100 — allows dense parking/crowd
-        verbose=False,
-    )
+    with _inference_lock:
+        results = model(
+            image_path,
+            device=device,
+            conf=threshold,     # 0.40 — forensic recall optimized
+            imgsz=1280,         # was 640 — preserves fine detail
+            iou=0.45,           # slightly permissive NMS for dense scenes
+            max_det=300,        # was default 100 — allows dense parking/crowd
+            verbose=False,
+        )
 
     detections = []
     det_idx = 0

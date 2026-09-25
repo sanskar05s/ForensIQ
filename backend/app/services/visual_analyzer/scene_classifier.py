@@ -17,6 +17,7 @@ modules to work.
 
 import os
 import logging
+from threading import Lock
 from pathlib import Path
 from typing import Optional
 
@@ -38,6 +39,8 @@ _LABELS_PATH  = _MODELS_DIR / "categories_places365.txt"
 _model: Optional[torch.nn.Module] = None
 _classes: Optional[list] = None
 _model_loaded: bool = False
+_model_lock = Lock()
+_inference_lock = Lock()
 
 # ── ForensIQ simplified label mapping ─────────────────────────────────────────
 # Maps Places365 category names → 8 ForensIQ scene labels.
@@ -178,6 +181,11 @@ FORENSIQ_SCENES = [
 
 
 def _load_model():
+    with _model_lock:
+        return _load_model_locked()
+
+
+def _load_model_locked():
     """Loads Places365-ResNet18. Fails gracefully if weights absent."""
     global _model, _classes, _model_loaded
 
@@ -280,7 +288,7 @@ def classify_scene(image_path: str) -> dict:
     tensor = _TRANSFORM(img).unsqueeze(0)
 
     # Run inference
-    with torch.no_grad():
+    with _inference_lock, torch.no_grad():
         logits = model(tensor)
         probs  = torch.nn.functional.softmax(logits, dim=1)[0]
 

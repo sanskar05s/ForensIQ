@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { apiClient } from "../api/client";
 
 export function useEvidence(caseId) {
@@ -6,11 +6,11 @@ export function useEvidence(caseId) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  async function fetchEvidence() {
+  const fetchEvidence = useCallback(async ({ showLoading = false } = {}) => {
     if (!caseId) return;
 
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       setError(null);
 
       const result = await apiClient(`/evidence/cases/${caseId}`);
@@ -21,11 +21,34 @@ export function useEvidence(caseId) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [caseId]);
 
   useEffect(() => {
-    fetchEvidence();
-  }, [caseId]);
+    fetchEvidence({ showLoading: true });
+  }, [caseId, fetchEvidence]);
+
+  const hasEvidenceProcessing = evidence.some(
+    (item) =>
+      ["image", "document"].includes(item.type) &&
+      ["uploaded", "analyzing"].includes(item.status),
+  );
+
+  useEffect(() => {
+    if (!hasEvidenceProcessing) return undefined;
+
+    let cancelled = false;
+    let timeoutId;
+    const poll = async () => {
+      await fetchEvidence();
+      if (!cancelled) timeoutId = window.setTimeout(poll, 2000);
+    };
+    timeoutId = window.setTimeout(poll, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [fetchEvidence, hasEvidenceProcessing]);
 
   return {
     evidence,

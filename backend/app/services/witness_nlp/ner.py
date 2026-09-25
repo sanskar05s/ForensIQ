@@ -1,6 +1,7 @@
 import re
 import spacy
 import logging
+from threading import Lock
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +11,8 @@ _AGE_ENTITY_RE = re.compile(
 )
 
 _nlp = None
+_nlp_lock = Lock()
+_inference_lock = Lock()
 
 # Maps spaCy entity labels to our simplified 5-type system
 LABEL_MAP = {
@@ -33,14 +36,16 @@ LABEL_MAP = {
 def get_nlp():
     global _nlp
     if _nlp is None:
-        try:
-            _nlp = spacy.load("en_core_web_trf")
-            logger.info("Loaded spaCy transformer model (en_core_web_trf)")
-        except OSError:
-            logger.warning(
-                "Transformer model not found. Falling back to en_core_web_sm."
-            )
-            _nlp = spacy.load("en_core_web_sm")
+        with _nlp_lock:
+            if _nlp is None:
+                try:
+                    _nlp = spacy.load("en_core_web_trf")
+                    logger.info("Loaded spaCy transformer model (en_core_web_trf)")
+                except OSError:
+                    logger.warning(
+                        "Transformer model not found. Falling back to en_core_web_sm."
+                    )
+                    _nlp = spacy.load("en_core_web_sm")
     return _nlp
 
 
@@ -53,7 +58,8 @@ def extract_entities(text: str) -> list:
     Each entity: {text, type, start, end, xai_reason}
     """
     nlp = get_nlp()
-    doc = nlp(text)
+    with _inference_lock:
+        doc = nlp(text)
 
     entities = []
     seen = set()  # deduplicate identical entity text+type pairs

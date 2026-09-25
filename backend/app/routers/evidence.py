@@ -18,7 +18,7 @@ router = APIRouter(
 
 
 @router.post("/upload")
-async def upload_evidence(
+def upload_evidence(
     case_id: str = Form(...),
     type: str = Form(...),
     file: UploadFile = File(...)
@@ -104,7 +104,7 @@ async def upload_evidence(
 
 
 @router.get("/cases/{case_id}")
-async def list_evidence(case_id: str):
+def list_evidence(case_id: str):
     """
     List all evidence for a case with priority scoring.
     """

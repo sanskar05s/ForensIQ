@@ -2,11 +2,14 @@ import re
 
 import easyocr
 import numpy as np
+from threading import Lock
 from PIL import Image, ImageOps
 
 from app.services.xai_formatter import format_ocr_xai
 
 _reader = None
+_reader_lock = Lock()
+_inference_lock = Lock()
 
 OCR_MIN_CONFIDENCE = 0.25       # Reject below this — pure noise
 OCR_WARN_CONFIDENCE = 0.60      # Flag as low-confidence in UI above this
@@ -16,7 +19,9 @@ def get_reader():
     global _reader
 
     if _reader is None:
-        _reader = easyocr.Reader(["en"], gpu=False)
+        with _reader_lock:
+            if _reader is None:
+                _reader = easyocr.Reader(["en"], gpu=False)
 
     return _reader
 
@@ -53,7 +58,8 @@ def extract_text(image_path: str) -> list:
     img = ImageOps.exif_transpose(img)
     img_array = np.array(img)
 
-    results = reader.readtext(img_array)
+    with _inference_lock:
+        results = reader.readtext(img_array)
 
     output = []
 

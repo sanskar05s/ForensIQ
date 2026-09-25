@@ -5,7 +5,7 @@ router = APIRouter()
 
 
 @router.get("/activity/cases/{case_id}")
-async def get_activity_log(case_id: str, limit: int = 50):
+def get_activity_log(case_id: str, limit: int = 50):
     """
     Returns activity log for a case, newest first.
     Limit: max 50 entries (sufficient for display and viva demo).

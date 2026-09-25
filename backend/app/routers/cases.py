@@ -51,7 +51,7 @@ class CaseUpdateRequest(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────
 
 @router.get("/")
-async def list_cases():
+def list_cases():
     """
     Returns all cases, newest first.
     
@@ -72,7 +72,7 @@ async def list_cases():
 
 
 @router.post("/")
-async def create_case(body: CaseCreateRequest):
+def create_case(body: CaseCreateRequest):
     """Create a new investigation case."""
     supabase = get_supabase_client()
 
@@ -126,7 +126,7 @@ async def create_case(body: CaseCreateRequest):
 
 
 @router.get("/{case_id}")
-async def get_case(case_id: str):
+def get_case(case_id: str):
     """
     Returns full case data including a staleness summary.
 
@@ -150,7 +150,7 @@ async def get_case(case_id: str):
 
 
 @router.patch("/{case_id}")
-async def update_case(case_id: str, body: CaseUpdateRequest):
+def update_case(case_id: str, body: CaseUpdateRequest):
     """Update mutable case fields (title, description, investigator, priority, status)."""
     supabase = get_supabase_client()
 
@@ -206,7 +206,7 @@ async def update_case(case_id: str, body: CaseUpdateRequest):
 
 
 @router.delete("/{case_id}")
-async def delete_case(case_id: str):
+def delete_case(case_id: str):
     """
     Deletes a case and all child data (CASCADE from database.sql).
     

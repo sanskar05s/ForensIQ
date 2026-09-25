@@ -35,7 +35,7 @@ function queueStatusLabel(status) {
     case QUEUE_STATUS.PENDING:
       return "Queued";
     case QUEUE_STATUS.ANALYZING:
-      return "Analysing…";
+      return "Analysing (or request status unknown)";
     case QUEUE_STATUS.SUCCESS:
       return "Completed";
     case QUEUE_STATUS.FAILED:
@@ -58,9 +58,12 @@ function readPersistedQueue(caseId) {
     const raw = localStorage.getItem(`forensiq_witness_queue_${caseId}`);
     const parsed = JSON.parse(raw || "[]");
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((item) => item && item.status !== QUEUE_STATUS.SUCCESS && item.status !== QUEUE_STATUS.FAILED)
-      .map((item) => item.status === QUEUE_STATUS.ANALYZING ? { ...item, status: QUEUE_STATUS.PENDING } : item);
+    return parsed.filter(
+      (item) =>
+        item &&
+        item.status !== QUEUE_STATUS.SUCCESS &&
+        item.status !== QUEUE_STATUS.FAILED,
+    );
   } catch {
     return [];
   }
@@ -163,9 +166,33 @@ export default function WitnessStatements() {
   const isProcessingRef = useRef(false);
   const queueRef = useRef(queue);
 
+  const updateQueueItem = useCallback((itemId, changes) => {
+    const updated = queueRef.current.map((item) =>
+      item.id === itemId ? { ...item, ...changes } : item,
+    );
+    queueRef.current = updated;
+    setQueue(updated);
+    persistQueue(caseId, updated);
+    window.dispatchEvent(
+      new CustomEvent("forensiq:witness-queue", {
+        detail: { caseId, queue: updated },
+      }),
+    );
+  }, [caseId]);
+
   useEffect(() => {
     queueRef.current = queue;
   }, [queue]);
+
+  useEffect(() => {
+    const syncQueue = (event) => {
+      if (event.detail?.caseId !== caseId) return;
+      queueRef.current = event.detail.queue;
+      setQueue(event.detail.queue);
+    };
+    window.addEventListener("forensiq:witness-queue", syncQueue);
+    return () => window.removeEventListener("forensiq:witness-queue", syncQueue);
+  }, [caseId]);
 
   /* Form & Queue status messages */
   const [formError, setFormError] = useState("");
@@ -231,16 +258,10 @@ export default function WitnessStatements() {
         }
 
         // Set item to ANALYZING
-        setQueue((prev) => {
-          const updated = prev.map((q) =>
-            q.id === nextItem.id ? { ...q, status: QUEUE_STATUS.ANALYZING } : q
-          );
-          queueRef.current = updated;
-          return updated;
-        });
+        updateQueueItem(nextItem.id, { status: QUEUE_STATUS.ANALYZING });
 
         try {
-          await apiClient(`/witness/cases/${caseId}/statements`, {
+          const result = await apiClient(`/witness/cases/${caseId}/statements`, {
             method: "POST",
             body: JSON.stringify({
               witness_label: nextItem.witness_label,
@@ -250,40 +271,27 @@ export default function WitnessStatements() {
           });
 
           // Set item to SUCCESS
-          setQueue((prev) => {
-            const updated = prev.map((q) =>
-              q.id === nextItem.id
-                ? { ...q, status: QUEUE_STATUS.SUCCESS, error: "" }
-                : q
-            );
-            queueRef.current = updated;
-            return updated;
+          updateQueueItem(nextItem.id, {
+            status: QUEUE_STATUS.SUCCESS,
+            error: "",
+            statement_id: result.statement_id,
           });
         } catch (err) {
           // Set item to FAILED
-          setQueue((prev) => {
-            const updated = prev.map((q) =>
-              q.id === nextItem.id
-                ? {
-                    ...q,
-                    status: QUEUE_STATUS.FAILED,
-                    error: err.message || "Analysis failed",
-                  }
-                : q
-            );
-            queueRef.current = updated;
-            return updated;
+          updateQueueItem(nextItem.id, {
+            status: QUEUE_STATUS.FAILED,
+            error: err.message || "Analysis failed",
           });
         }
 
-        fetchStatements();
+        await fetchStatements();
       }
     } finally {
       isProcessingRef.current = false;
       setIsProcessing(false);
       fetchStatements();
     }
-  }, [caseId, fetchStatements]);
+  }, [caseId, fetchStatements, updateQueueItem]);
 
   async function handleProcessAllPending() {
     processQueueSequential();
@@ -1877,7 +1885,8 @@ export default function WitnessStatements() {
 
                 {/* Remove button */}
                 {(item.status === QUEUE_STATUS.PENDING ||
-                  item.status === QUEUE_STATUS.FAILED) && (
+                  item.status === QUEUE_STATUS.FAILED ||
+                  (item.status === QUEUE_STATUS.ANALYZING && !isProcessing)) && (
                   <button
                     onClick={() => removeFromQueue(item.id)}
                     style={{

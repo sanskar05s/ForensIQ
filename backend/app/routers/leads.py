@@ -7,7 +7,7 @@ router = APIRouter()
 
 
 @router.post("/leads/cases/{case_id}/generate")
-async def generate_leads(case_id: str):
+def generate_leads(case_id: str):
     supabase = get_supabase_client()
     result = generate_investigation_leads(case_id, supabase)
     try:
@@ -20,6 +20,6 @@ async def generate_leads(case_id: str):
 
 
 @router.get("/leads/cases/{case_id}/generate")
-async def get_leads(case_id: str):
+def get_leads(case_id: str):
     # Alias — GET also triggers generation (stateless, Gemini always fresh)
-    return await generate_leads(case_id)
+    return generate_leads(case_id)

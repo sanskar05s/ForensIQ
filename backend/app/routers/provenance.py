@@ -6,7 +6,7 @@ router = APIRouter()
 
 
 @router.get("/provenance/cases/{case_id}/evidence/{evidence_id}")
-async def get_provenance(case_id: str, evidence_id: str):
+def get_provenance(case_id: str, evidence_id: str):
     supabase = get_supabase_client()
     journey = build_evidence_provenance(evidence_id, case_id, supabase)
     if not journey:
