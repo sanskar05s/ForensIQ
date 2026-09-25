@@ -17,13 +17,15 @@ logger = logging.getLogger(__name__)
 def run_contradiction_check(case_id: str):
     """
     Incremental contradiction detection.
-    Only processes witness statements added since last run.
+    Only processes witness statements added since the last manual run.
     Compares new statements against ALL existing statements.
     Never reprocesses existing vs existing pairs.
     """
     supabase = get_supabase_client()
 
-    # Get current build_state to find last run timestamp
+    # Use a dedicated manual-run cursor. The legacy last_contradiction_run
+    # value may have been advanced by older automatic Tier 1 checks, which
+    # would incorrectly make those statements appear already fully analyzed.
     case = supabase.table("cases")\
         .select("build_state")\
         .eq("id", case_id)\
@@ -34,7 +36,7 @@ def run_contradiction_check(case_id: str):
         raise HTTPException(status_code=404, detail="Case not found")
 
     build_state = case.get("build_state") or {}
-    last_run = build_state.get("last_contradiction_run")
+    last_run = build_state.get("last_manual_contradiction_run")
 
     # Fetch ONLY new statements (analyzed after last run)
     new_query = supabase.table("witness_statements")\
@@ -63,7 +65,11 @@ def run_contradiction_check(case_id: str):
     if last_run:
         existing_query = existing_query.lte("analyzed_at", last_run)
 
-    existing_statements = existing_query.execute().data or []
+    existing_statements = (
+        existing_query.execute().data or []
+        if last_run
+        else []
+    )
 
     # Build comparison pairs:
     # new vs new + new vs existing (never existing vs existing)
@@ -178,8 +184,8 @@ def run_contradiction_check(case_id: str):
         except Exception as e:
             logger.warning(f"Failed to insert contradiction: {e}")
 
-    # Update build_state with current timestamp
-    build_state["last_contradiction_run"] = datetime.now(timezone.utc).isoformat()
+    # Advance the manual cursor only after this manual pass has completed.
+    build_state["last_manual_contradiction_run"] = datetime.now(timezone.utc).isoformat()
     supabase.table("cases")\
         .update({"build_state": build_state})\
         .eq("id", case_id)\
@@ -260,7 +266,7 @@ def check_staleness(case_id: str):
         raise HTTPException(status_code=404, detail="Case not found")
 
     build_state = case.get("build_state") or {}
-    last_run = build_state.get("last_contradiction_run")
+    last_run = build_state.get("last_manual_contradiction_run")
 
     # Count statements analyzed after last run
     query = supabase.table("witness_statements")\

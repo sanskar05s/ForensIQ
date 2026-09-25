@@ -174,10 +174,6 @@ def _refresh_case_contradictions(case_id: str, statement_id: str):
         from app.services.contradiction.rule_based import run_tier1
 
         supabase_client = get_supabase_client()
-        case = supabase_client.table("cases")\
-            .select("build_state").eq("id", case_id).execute()
-        build_state = ((case.data[0] if case.data else {}).get("build_state") or {})
-
         all_statements = supabase_client.table("witness_statements")\
             .select("*").eq("case_id", case_id)\
             .eq("analysis_status", "analyzed").execute().data or []
@@ -226,9 +222,9 @@ def _refresh_case_contradictions(case_id: str, statement_id: str):
                 supabase_client.table("contradictions").insert(db_payload).execute()
                 existing_fingerprints.add(fp)
 
-        build_state["last_contradiction_run"] = datetime.now(timezone.utc).isoformat()
-        supabase_client.table("cases").update({"build_state": build_state})\
-            .eq("id", case_id).execute()
+        # This lightweight automatic pass only runs Tier 1. Leave the manual
+        # analysis cursor untouched so the investigator's run still includes
+        # this statement and can evaluate eligible pairs with Tier 2/NLI.
 
     except Exception as e:
         logger.warning(f"Auto contradiction check failed (non-fatal): {e}")
