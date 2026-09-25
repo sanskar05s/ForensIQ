@@ -1,11 +1,17 @@
+import { supabase } from "../supabase/client";
+
 const API_BASE_URL = "http://127.0.0.1:8000/api";
 
 export async function apiClient(endpoint, options = {}) {
   const isFormData = options.body instanceof FormData;
+  const { data: { session } = {} } = await supabase.auth.getSession();
   const headers = {
     ...(!isFormData ? { "Content-Type": "application/json" } : {}),
     ...(options.headers || {}),
   };
+  if (session?.access_token) {
+    headers.Authorization = `Bearer ${session.access_token}`;
+  }
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     ...options,

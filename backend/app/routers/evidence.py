@@ -3,9 +3,10 @@ import shutil
 import tempfile
 import uuid
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.core.supabase import get_supabase_client
+from app.core.auth import assert_case_owner, get_current_user_id, require_case_owner
 from app.services.blockchain.sha256_hasher import hash_file
 from app.services.activity_logger import log_activity
 from app.services.evidence_scorer import compute_priority_score
@@ -13,7 +14,8 @@ from app.services.evidence_scorer import compute_priority_score
 
 router = APIRouter(
     prefix="/evidence",
-    tags=["Evidence"]
+    tags=["Evidence"],
+    dependencies=[Depends(get_current_user_id)],
 )
 
 
@@ -21,7 +23,8 @@ router = APIRouter(
 def upload_evidence(
     case_id: str = Form(...),
     type: str = Form(...),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
 ):
     """
     Upload evidence.
@@ -33,6 +36,7 @@ def upload_evidence(
     """
 
     supabase = get_supabase_client()
+    assert_case_owner(case_id, user_id)
 
     temp_path = None
 
@@ -103,7 +107,7 @@ def upload_evidence(
             Path(temp_path).unlink()
 
 
-@router.get("/cases/{case_id}")
+@router.get("/cases/{case_id}", dependencies=[Depends(require_case_owner)])
 def list_evidence(case_id: str):
     """
     List all evidence for a case with priority scoring.

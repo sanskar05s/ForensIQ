@@ -17,12 +17,13 @@ Schema (from database.sql):
     status    IN ('Open','Active','Pending Review','Closed')
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timezone
 
 from app.core.supabase import get_supabase_client
+from app.core.auth import get_current_user_id
 from app.services.activity_logger import log_activity
 
 router = APIRouter(prefix="/cases", tags=["Cases"])
@@ -51,20 +52,18 @@ class CaseUpdateRequest(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────
 
 @router.get("/")
-def list_cases():
+def list_cases(user_id: str = Depends(get_current_user_id)):
     """
     Returns all cases, newest first.
     
-    NOTE: RLS on the cases table (created_by = auth.uid()) ensures users
-    only see their own cases when using the anon/authenticated key.
-    The service_role key bypasses RLS — this is acceptable because the
-    backend is a trusted server and the frontend already authenticates
-    via Supabase Auth before calling the API.
+    The backend uses a service-role client, so ownership is enforced here
+    rather than delegated to Row Level Security.
     """
     supabase = get_supabase_client()
     result = (
         supabase.table("cases")
         .select("*")
+        .eq("created_by", user_id)
         .order("created_at", desc=True)
         .execute()
     )
@@ -72,7 +71,10 @@ def list_cases():
 
 
 @router.post("/")
-def create_case(body: CaseCreateRequest):
+def create_case(
+    body: CaseCreateRequest,
+    user_id: str = Depends(get_current_user_id),
+):
     """Create a new investigation case."""
     supabase = get_supabase_client()
 
@@ -104,8 +106,8 @@ def create_case(body: CaseCreateRequest):
 
     if body.case_id:
         row["case_id"] = body.case_id
-    if body.created_by:
-        row["created_by"] = body.created_by
+    # Never trust a client-supplied owner ID.
+    row["created_by"] = user_id
 
     result = supabase.table("cases").insert(row).select().single().execute()
 
@@ -118,7 +120,7 @@ def create_case(body: CaseCreateRequest):
         case_id=case["id"],
         event_type="case_created",
         description=f"Case '{case['title']}' created",
-        actor_id=body.created_by,
+        actor_id=user_id,
         metadata={"priority": body.priority, "status": body.status},
     )
 
@@ -126,7 +128,7 @@ def create_case(body: CaseCreateRequest):
 
 
 @router.get("/{case_id}")
-def get_case(case_id: str):
+def get_case(case_id: str, user_id: str = Depends(get_current_user_id)):
     """
     Returns full case data including a staleness summary.
 
@@ -139,7 +141,8 @@ def get_case(case_id: str):
         supabase.table("cases")
         .select("*")
         .eq("id", case_id)
-        .single()
+        .eq("created_by", user_id)
+        .maybe_single()
         .execute()
     )
 
@@ -150,7 +153,11 @@ def get_case(case_id: str):
 
 
 @router.patch("/{case_id}")
-def update_case(case_id: str, body: CaseUpdateRequest):
+def update_case(
+    case_id: str,
+    body: CaseUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+):
     """Update mutable case fields (title, description, investigator, priority, status)."""
     supabase = get_supabase_client()
 
@@ -187,8 +194,9 @@ def update_case(case_id: str, body: CaseUpdateRequest):
         supabase.table("cases")
         .update(updates)
         .eq("id", case_id)
+        .eq("created_by", user_id)
         .select()
-        .single()
+        .maybe_single()
         .execute()
     )
 
@@ -206,7 +214,7 @@ def update_case(case_id: str, body: CaseUpdateRequest):
 
 
 @router.delete("/{case_id}")
-def delete_case(case_id: str):
+def delete_case(case_id: str, user_id: str = Depends(get_current_user_id)):
     """
     Deletes a case and all child data (CASCADE from database.sql).
     
@@ -222,11 +230,21 @@ def delete_case(case_id: str):
         supabase.table("cases")
         .select("id, title")
         .eq("id", case_id)
+        .eq("created_by", user_id)
         .execute()
     )
     if not check.data:
         raise HTTPException(status_code=404, detail="Case not found")
 
-    supabase.table("cases").delete().eq("id", case_id).execute()
+    deleted = (
+        supabase.table("cases")
+        .delete()
+        .eq("id", case_id)
+        .eq("created_by", user_id)
+        .select("id")
+        .execute()
+    )
+    if not deleted.data:
+        raise HTTPException(status_code=404, detail="Case not found")
 
     return {"success": True, "message": f"Case {case_id} deleted"}

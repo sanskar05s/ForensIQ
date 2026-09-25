@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional
 from app.core.supabase import get_supabase_client
+from app.core.auth import require_case_owner
 from app.services.witness_nlp.ner import extract_entities
 from app.services.witness_nlp.temporal import extract_temporal_sequence
 from app.services.witness_nlp.hedge_detector import detect_hedge_markers
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/witness",
     tags=["Witness NLP"],
+    dependencies=[Depends(require_case_owner)],
 )
 
 
@@ -40,6 +42,18 @@ def create_statement(
     stores results in witness_statements table.
     """
     supabase = get_supabase_client()
+
+    if body.source_evidence_id:
+        source = (
+            supabase.table("evidence")
+            .select("id")
+            .eq("id", body.source_evidence_id)
+            .eq("case_id", case_id)
+            .maybe_single()
+            .execute()
+        )
+        if not source.data:
+            raise HTTPException(status_code=404, detail="Source evidence not found in case.")
 
     text = body.raw_text.strip()
     witness_label = body.witness_label.strip()

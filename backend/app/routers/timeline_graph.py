@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from app.core.supabase import get_supabase_client
+from app.core.auth import require_case_owner
 from app.services.timeline_graph.timeline_fusion import build_timeline
 from app.services.timeline_graph.graph_builder import build_graph
 from app.services.timeline_graph.sna_metrics import (
@@ -9,9 +10,13 @@ from app.services.activity_logger import log_activity
 from datetime import datetime, timezone
 import logging
 
-timeline_router = APIRouter(tags=["Timeline"])
+timeline_router = APIRouter(
+    tags=["Timeline"], dependencies=[Depends(require_case_owner)]
+)
 
-graph_router = APIRouter(tags=["Knowledge Graph"])
+graph_router = APIRouter(
+    tags=["Knowledge Graph"], dependencies=[Depends(require_case_owner)]
+)
 
 logger = logging.getLogger(__name__)
 

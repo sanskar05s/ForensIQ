@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from app.core.supabase import get_supabase_client
+from app.core.auth import require_case_owner
 from app.services.provenance_builder import build_evidence_provenance
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_case_owner)])
 
 
 @router.get("/provenance/cases/{case_id}/evidence/{evidence_id}")

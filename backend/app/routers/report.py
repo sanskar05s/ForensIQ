@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from app.core.supabase import get_supabase_client
+from app.core.auth import require_case_owner
 from app.services.report.builder import generate_report, get_report_download_url
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_case_owner)])
 
 
 @router.post("/report/cases/{case_id}/generate")

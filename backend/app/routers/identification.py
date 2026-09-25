@@ -16,15 +16,16 @@ import tempfile
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 from PIL import Image
 
 from app.core.supabase import get_supabase_client
+from app.core.auth import require_case_owner
 from app.services.activity_logger import log_activity
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_case_owner)])
 logger = logging.getLogger(__name__)
 
 
@@ -75,6 +76,16 @@ def add_identification(
     if not ev_res.data:
         raise HTTPException(status_code=404, detail="Evidence not found")
     ev = ev_res.data[0]
+
+    if body.statement_id:
+        statement_res = supabase.table("witness_statements")\
+            .select("id")\
+            .eq("id", body.statement_id)\
+            .eq("case_id", case_id)\
+            .maybe_single()\
+            .execute()
+        if not statement_res.data:
+            raise HTTPException(status_code=404, detail="Statement not found in case")
 
     # Verify detection_index is valid
     detections = ev.get("object_detections") or []

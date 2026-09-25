@@ -13,7 +13,7 @@ def build_evidence_provenance(evidence_id: str, case_id: str, supabase) -> list:
 
     # Get evidence row
     ev = supabase.table("evidence")\
-        .select("*").eq("id", evidence_id).single().execute().data
+        .select("*").eq("id", evidence_id).eq("case_id", case_id).single().execute().data
     if not ev:
         return []
 

@@ -1,10 +1,11 @@
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.core.supabase import get_supabase_client
+from app.core.auth import assert_case_owner, get_current_user_id, require_case_owner
 from app.services.blockchain.sha256_hasher import hash_file
 from app.services.blockchain.sepolia_writer import write_hash_to_sepolia
 from app.services.activity_logger import log_activity
@@ -21,12 +22,29 @@ class BlockchainRequest(BaseModel):
 
 
 @router.post("/write")
-def write_hash(request: BlockchainRequest):
+def write_hash(
+    request: BlockchainRequest,
+    user_id: str = Depends(get_current_user_id),
+):
     """
     M1-C Blockchain Endpoint
 
     Writes a SHA-256 hash to the Sepolia blockchain.
     """
+
+    supabase = get_supabase_client()
+    evidence_result = (
+        supabase.table("evidence")
+        .select("id, case_id")
+        .eq("id", request.evidence_id)
+        .maybe_single()
+        .execute()
+    )
+    if not evidence_result.data:
+        raise HTTPException(status_code=404, detail="Evidence not found.")
+
+    case_id = evidence_result.data["case_id"]
+    assert_case_owner(case_id, user_id)
 
     try:
         result = write_hash_to_sepolia(
@@ -37,15 +55,13 @@ def write_hash(request: BlockchainRequest):
         tx_hash = result.get("tx_hash")
 
         # Update evidence row with hash + tx
-        supabase = get_supabase_client()
         ev_result = supabase.table("evidence").update({
             "file_hash": request.sha256,
             "blockchain_tx_hash": tx_hash,
-        }).eq("id", request.evidence_id).select("case_id").execute()
+        }).eq("id", request.evidence_id).eq("case_id", case_id).select("case_id").execute()
 
-        case_id = "unknown"
-        if ev_result.data:
-            case_id = ev_result.data[0].get("case_id", "unknown")
+        if not ev_result.data:
+            raise HTTPException(status_code=404, detail="Evidence not found.")
 
         log_activity(
             case_id=case_id,
@@ -65,11 +81,13 @@ def write_hash(request: BlockchainRequest):
 
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/cases/{case_id}/evidence/{evidence_id}/verify")
+@router.get("/cases/{case_id}/evidence/{evidence_id}/verify", dependencies=[Depends(require_case_owner)])
 def verify_evidence(case_id: str, evidence_id: str):
     """
     M1-C Blockchain Verify Endpoint
@@ -144,7 +162,7 @@ def verify_evidence(case_id: str, evidence_id: str):
             Path(temp_path).unlink()
 
 
-@router.get("/cases/{case_id}/evidence/{evidence_id}/signed-url")
+@router.get("/cases/{case_id}/evidence/{evidence_id}/signed-url", dependencies=[Depends(require_case_owner)])
 def get_signed_url(case_id: str, evidence_id: str):
     """
     M1-C Signed URL Endpoint
@@ -201,7 +219,7 @@ def get_signed_url(case_id: str, evidence_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/cases/{case_id}/audit")
+@router.get("/cases/{case_id}/audit", dependencies=[Depends(require_case_owner)])
 def get_blockchain_audit(case_id: str):
     """
     Returns all evidence items for a case with their blockchain status.

@@ -1,10 +1,11 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.core.supabase import get_supabase_client
+from app.core.auth import require_case_owner
 from app.services.hypothesis_analyzer import analyze_hypothesis
 from datetime import datetime, timezone
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_case_owner)])
 
 
 class HypothesisRequest(BaseModel):

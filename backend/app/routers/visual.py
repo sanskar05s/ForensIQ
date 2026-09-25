@@ -2,9 +2,10 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.supabase import get_supabase_client
+from app.core.auth import require_case_owner
 from app.services.visual_analyzer.detector import detect_objects
 from app.services.visual_analyzer.ocr import extract_text
 from app.services.visual_analyzer.scene_classifier import classify_scene
@@ -13,6 +14,7 @@ from app.services.activity_logger import log_activity
 router = APIRouter(
     prefix="/visual",
     tags=["Visual Analysis"],
+    dependencies=[Depends(require_case_owner)],
 )
 
 
