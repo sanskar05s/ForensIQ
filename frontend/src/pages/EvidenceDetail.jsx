@@ -20,10 +20,58 @@ import {
 import AppShell from "../components/layout/AppShell";
 import Spinner from "../components/loading/Spinner";
 import { supabase } from "../supabase/client";
-import { apiClient } from "../api/client";
+import { apiBlob, apiClient } from "../api/client";
 import { relativeTime } from "../utils/relativeTime";
 
-const API_BASE = "http://127.0.0.1:8000";
+function DetectionCrop({ caseId, evidenceId, detectionIndex, alt, style }) {
+  const [imageUrl, setImageUrl] = useState(null);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl;
+
+    apiBlob(
+      `/identification/cases/${caseId}/evidence/${evidenceId}/crop/${detectionIndex}`,
+      { signal: controller.signal },
+    )
+      .then((blob) => {
+        if (controller.signal.aborted) return;
+        objectUrl = URL.createObjectURL(blob);
+        setImageUrl(objectUrl);
+      })
+      .catch((err) => {
+        if (err.name !== "AbortError") setLoadError(true);
+      });
+
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [caseId, evidenceId, detectionIndex]);
+
+  if (!imageUrl) {
+    return (
+      <div
+        role={loadError ? "img" : undefined}
+        aria-label={loadError ? `${alt} unavailable` : undefined}
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--text-muted)",
+          fontSize: 11,
+        }}
+      >
+        {loadError ? "No preview" : "Loading preview…"}
+      </div>
+    );
+  }
+
+  return <img src={imageUrl} alt={alt} style={style} />;
+}
 
 const apiGet = async (endpoint) => {
   const res = await apiClient(endpoint);
@@ -490,35 +538,17 @@ export default function EvidenceDetail() {
                 }}
                 onClick={() => openFullImageOverlay(detIndex)}
               >
-                <img
-                  src={`${API_BASE}/api/identification/cases/${caseId}/evidence/${evidence.id}/crop/${detIndex}`}
+                <DetectionCrop
+                  caseId={caseId}
+                  evidenceId={evidence.id}
+                  detectionIndex={detIndex}
                   alt={`${det.label} detection`}
                   style={{
                     maxWidth: "100%",
                     maxHeight: "100%",
                     objectFit: "contain",
                   }}
-                  onError={(e) => {
-                    e.target.style.display = "none";
-                    if (e.target.nextSibling) {
-                      e.target.nextSibling.style.display = "flex";
-                    }
-                  }}
                 />
-                {/* Fallback */}
-                <div
-                  style={{
-                    display: "none",
-                    width: "100%",
-                    height: "100%",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "var(--text-muted)",
-                    fontSize: 11,
-                  }}
-                >
-                  No preview
-                </div>
 
                 {/* Fullscreen icon — top right of thumbnail */}
                 <div

@@ -24,6 +24,7 @@ export async function apiClient(endpoint, options = {}) {
   const {
     timeoutMs: requestedTimeout,
     signal: callerSignal,
+    responseType = "json",
     ...fetchOptions
   } = options;
   const method = (fetchOptions.method || "GET").toUpperCase();
@@ -91,7 +92,7 @@ export async function apiClient(endpoint, options = {}) {
         throw new Error(errorDetail);
       }
 
-      return response.json();
+      return responseType === "blob" ? response.blob() : response.json();
     })();
 
     return await Promise.race([requestPromise, timeoutPromise]);
@@ -110,6 +111,10 @@ export async function apiClient(endpoint, options = {}) {
       callerSignal.removeEventListener("abort", callerAbortHandler);
     }
   }
+}
+
+export async function apiBlob(endpoint, options = {}) {
+  return apiClient(endpoint, { ...options, responseType: "blob" });
 }
 
 export async function apiPatch(endpoint, body, options = {}) {
